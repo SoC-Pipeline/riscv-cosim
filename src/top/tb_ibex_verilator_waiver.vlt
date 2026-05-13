@@ -1,0 +1,11 @@
+`verilator_config
+
+lint_off -rule WIDTH -file "*/tb_ibex.sv"
+         -match "*expects 1 bits*Initial value's CONST '32'h1'*"
+lint_off -rule DECLFILENAME -file "*/tb_ibex.sv"
+lint_off -rule UNUSEDSIGNAL -file "*/tb_ibex.sv"
+lint_off -rule BLKSEQ -file "*/tb_ibex.sv"
+
+public -module "tb_ibex" -var "RV32E"
+public -module "tb_ibex" -var "RV32M"
+public -module "tb_ibex" -var "RV32B"

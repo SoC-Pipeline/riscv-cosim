@@ -1,0 +1,180 @@
+CAPI=2:
+name: "local:spike_cosim:tb_ibex_cosim"
+description: "Project Ibex testbench with Verilator co-simulation"
+
+filesets:
+  files_tb:
+    depend:
+      - lowrisc:dv:cosim_dpi
+      - lowrisc:ibex:ibex_top_tracing
+      - lowrisc:ibex:sim_shared
+      - lowrisc:dv_verilator:memutil_verilator
+      - lowrisc:dv_verilator:simutil_verilator
+      - lowrisc:dv_verilator:ibex_pcounts
+      - lowrisc:tool:ibex_cosim_setup_check
+    files:
+      - tb_ibex.sv
+      - tb_ibex_cosim_bind.sv
+      - tb_ibex_cosim.cc: { file_type: cppSource }
+      - ../cosim/riscv_simulator.h: { is_include_file: true }
+      - ../cosim/spike_simulator.h: { is_include_file: true }
+      - ../cosim/cosim_bridge.h: { is_include_file: true }
+      - ../cosim/cosim_session.h: { is_include_file: true }
+      - ../cosim/elf_utils.h: { is_include_file: true }
+      - ../cosim/cosim_bridge.cc: { file_type: cppSource }
+      - ../cosim/cosim_session.cc: { file_type: cppSource }
+      - ../cosim/spike_simulator.cc: { file_type: cppSource }
+      - ../cosim/elf_utils.cc: { file_type: cppSource }
+      - tb_ibex_verilator_waiver.vlt: { file_type: vlt }
+      - ../../external/ibex/dv/verilator/simple_system_cosim/ibex_simple_system_cosim_checker.sv
+    file_type: systemVerilogSource
+
+parameters:
+  RV32E:
+    datatype: int
+    paramtype: vlogparam
+    default: 0
+
+  RV32M:
+    datatype: str
+    default: ibex_pkg::RV32MFast
+    paramtype: vlogdefine
+
+  RV32B:
+    datatype: str
+    default: ibex_pkg::RV32BNone
+    paramtype: vlogdefine
+
+  RV32ZC:
+    datatype: str
+    default: ibex_pkg::RV32ZcaZcbZcmp
+    paramtype: vlogdefine
+
+  RegFile:
+    datatype: str
+    default: ibex_pkg::RegFileFF
+    paramtype: vlogdefine
+
+  ICache:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  ICacheECC:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  BranchTargetALU:
+    datatype: int
+    paramtype: vlogparam
+    default: 0
+
+  WritebackStage:
+    datatype: int
+    paramtype: vlogparam
+    default: 0
+
+  SecureIbex:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  BranchPredictor:
+    datatype: int
+    paramtype: vlogparam
+    default: 0
+
+  DbgTriggerEn:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  PMPEnable:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  PMPGranularity:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  PMPNumRegions:
+    datatype: int
+    default: 4
+    paramtype: vlogparam
+
+  MHPMCounterNum:
+    datatype: int
+    paramtype: vlogparam
+    default: 0
+
+  MHPMCounterWidth:
+    datatype: int
+    paramtype: vlogparam
+    default: 40
+
+  ICacheScramble:
+    datatype: int
+    default: 0
+    paramtype: vlogparam
+
+  RamBaseAddr:
+    datatype: int
+    default: 2147483648
+    paramtype: vlogparam
+
+  BootAddr:
+    datatype: int
+    default: 2147483648
+    paramtype: vlogparam
+
+  SRAMInitFile:
+    datatype: str
+    paramtype: vlogparam
+
+targets:
+  default: &default_target
+    filesets:
+      - files_tb
+    toplevel: tb_ibex
+    parameters:
+      - RV32E
+      - RV32M
+      - RV32B
+      - RV32ZC
+      - RegFile
+      - ICache
+      - ICacheECC
+      - BranchTargetALU
+      - WritebackStage
+      - SecureIbex
+      - BranchPredictor
+      - DbgTriggerEn
+      - PMPEnable
+      - PMPGranularity
+      - PMPNumRegions
+      - MHPMCounterNum
+      - MHPMCounterWidth
+      - ICacheScramble
+      - RamBaseAddr
+      - BootAddr
+      - SRAMInitFile
+
+  sim:
+    <<: *default_target
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: cc
+        verilator_options:
+          - '--trace'
+          - '--trace-fst'
+          - '--trace-structs'
+          - '--trace-params'
+          - '--trace-max-array 1024'
+          - '-CFLAGS "-std=c++17 -Wall -DVL_USER_STOP -DVM_TRACE_FMT_FST -DTOPLEVEL_NAME=tb_ibex -g `pkg-config --cflags riscv-riscv riscv-disasm riscv-fdt`"'
+          - '-LDFLAGS "-pthread -lutil -lelf `pkg-config --libs riscv-riscv riscv-disasm riscv-fdt` -lfesvr -lboost_regex -lboost_system -ldl -latomic"'
+          - "-Wall"
+          - "--unroll-count 72"

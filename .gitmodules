@@ -1,0 +1,15 @@
+[submodule "external/picorv32"]
+	path = external/picorv32
+	url = git@github.com:SoC-Pipeline/picorv32.git
+[submodule "external/ibex"]
+	path = external/ibex
+	url = git@github.com:SoC-Pipeline/ibex.git
+[submodule "external/Cores-VeeR-EL2"]
+	path = external/Cores-VeeR-EL2
+	url = git@github.com:SoC-Pipeline/Cores-VeeR-EL2.git
+[submodule "external/riscv-isa-sim"]
+	path = external/riscv-isa-sim
+	url = git@github.com:riscv-software-src/riscv-isa-sim.git
+[submodule "external/riscv-pk"]
+	path = external/riscv-pk
+	url = git@github.com:riscv-software-src/riscv-pk.git
