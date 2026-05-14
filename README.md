@@ -2,7 +2,7 @@
 
 This repository builds firmware and runs RISC-V co-simulation flows for:
 - CPU retire-compare mode: `picorv32`, `ibex`, `veer_el2`
-- SoC bus-driven mode (CPU-less shell): `soc-spike`
+- SoC bus-driven mode (CPU-less shell): `soc/picorv32`
 
 ## Repository Overview
 
@@ -22,7 +22,7 @@ This repository builds firmware and runs RISC-V co-simulation flows for:
           v                                       v
 +---------+----------------------+    +------------+-------------+
 | CPU Cosim Targets              |    | SoC Mode (CPU-less)      |
-| picorv32 / ibex / veer_el2     |    | picosoc shell + Spike bus|
+| picorv32 / ibex / veer_el2     |    | picosoc soc + Spike bus  |
 +---------+----------------------+    +------------+-------------+
           |                                        |
           v                                        v
@@ -56,7 +56,7 @@ git submodule update --init --recursive
 Run full CPU-target regression:
 
 ```bash
-./build.sh run all all
+./build.sh run cpu all all
 ```
 
 Build slow dependencies once:
@@ -68,24 +68,24 @@ Build slow dependencies once:
 Build firmware/top explicitly:
 
 ```bash
-./build.sh build -f all
-./build.sh build -t all
+./build.sh build firmware all
+./build.sh build cpu all
+./build.sh build soc picorv32
 ```
 
 Run one target/case:
 
 ```bash
-./build.sh run picorv32 hello
-./build.sh run ibex pico_test
-./build.sh run veer_el2 mem
+./build.sh run cpu picorv32 hello
+./build.sh run cpu ibex pico_test
+./build.sh run cpu veer_el2 mem
 ```
 
 Run SoC bus-driven mode:
 
 ```bash
-./build.sh soc-memtest
-./build.sh soc-spike hello
-./build.sh soc-spike all
+./build.sh run soc picorv32 hello
+./build.sh run soc picorv32 all
 ```
 
 ## Common Environment Overrides

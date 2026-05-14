@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "Vtb_picosoc_shell_bus.h"
+#include "Vpicosoc_soc_bus.h"
 
 #include "riscv/isa_parser.h"
 #include "riscv/mmu.h"
@@ -69,7 +69,7 @@ uint64_t rd64(const uint8_t *p) { return (uint64_t)rd32(p) | ((uint64_t)rd32(p +
 
 class TbBusSimif : public simif_t {
 public:
-	explicit TbBusSimif(Vtb_picosoc_shell_bus *tb) : tb_(tb) {}
+	explicit TbBusSimif(Vpicosoc_soc_bus *tb) : tb_(tb) {}
 
 	struct BusStats {
 		uint64_t rd_total = 0;
@@ -98,29 +98,29 @@ public:
 		return true;
 	}
 
-bool mmio_store(reg_t addr, size_t len, const uint8_t *bytes) override
-{
-	if (len != 1 && len != 2 && len != 4) {
-		return false;
-	}
-	if (addr == 0x10000000u && len >= 1) {
-		const unsigned char ch = bytes[0];
-		if (ch >= 32 && ch < 127) {
-			std::cout << static_cast<char>(ch) << std::flush;
-		}
-	}
-	const uint32_t a = static_cast<uint32_t>(addr);
-	const uint32_t aligned = a & ~0x3u;
-	const uint32_t lane = a & 0x3u;
-		uint32_t data = 0;
-		uint32_t wstrb = 0;
-		for (size_t i = 0; i < len; ++i) {
-			data |= (uint32_t)bytes[i] << (8 * (lane + i));
-			wstrb |= 1u << (lane + i);
-		}
-		bus_write(aligned, data, wstrb);
-		return true;
-	}
+    bool mmio_store(reg_t addr, size_t len, const uint8_t *bytes) override
+    {
+        if (len != 1 && len != 2 && len != 4) {
+            return false;
+        }
+        if (addr == 0x10000000u && len >= 1) {
+            const unsigned char ch = bytes[0];
+            if (ch >= 32 && ch < 127) {
+                std::cout << static_cast<char>(ch) << std::flush;
+            }
+        }
+        const uint32_t a = static_cast<uint32_t>(addr);
+        const uint32_t aligned = a & ~0x3u;
+        const uint32_t lane = a & 0x3u;
+        uint32_t data = 0;
+        uint32_t wstrb = 0;
+        for (size_t i = 0; i < len; ++i) {
+            data |= (uint32_t)bytes[i] << (8 * (lane + i));
+            wstrb |= 1u << (lane + i);
+        }
+        bus_write(aligned, data, wstrb);
+        return true;
+    }
 
 	void proc_reset(unsigned) override {}
 	const char *get_symbol(uint64_t) override { return nullptr; }
@@ -234,7 +234,7 @@ private:
 		tick();
 	}
 
-	Vtb_picosoc_shell_bus *tb_;
+	Vpicosoc_soc_bus *tb_;
 	BusStats stats_{};
 };
 
@@ -265,7 +265,7 @@ int main(int argc, char **argv)
 	const uint64_t max_steps = 2000000;
 	const bool verbose = env_enabled("SOC_SPIKE_VERBOSE");
 
-	auto tb = std::make_unique<Vtb_picosoc_shell_bus>();
+	auto tb = std::make_unique<Vpicosoc_soc_bus>();
 	auto simif = std::make_unique<TbBusSimif>(tb.get());
 	simif->reset();
 

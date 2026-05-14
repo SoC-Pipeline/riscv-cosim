@@ -1,6 +1,6 @@
 `timescale 1 ns / 1 ps
 
-module tb_picosoc_shell_mem;
+module picosoc_soc_mem_tb;
 	localparam [31:0] RAM_BASE = 32'h8000_0000;
 	reg clk = 1'b0;
 	reg resetn = 1'b0;
@@ -22,7 +22,7 @@ module tb_picosoc_shell_mem;
 
 	always #5 clk = ~clk;
 
-	picosoc_shell #(
+	picosoc_soc #(
 		.MEM_WORDS(256)
 	) dut (
 		.clk(clk),
@@ -99,7 +99,7 @@ module tb_picosoc_shell_mem;
 			$finish(1);
 		end
 
-		$display("PASS: picosoc_shell memory read/write");
+		$display("PASS: picosoc_soc memory read/write");
 		$finish(0);
 	end
 endmodule

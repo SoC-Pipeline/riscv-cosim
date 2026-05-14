@@ -34,21 +34,28 @@ firmware, top, and execution layers:
   -> build external/riscv-pk into build/pk
   -> build build/src/cosim/libspike.so and libspike.vpi
 
-./build.sh build -f [case|all]
+./build.sh build firmware [case|all]
   -> build build/firmware/<case>/obj/firmware.elf
   -> build build/firmware/<case>/obj/firmware.hex
 
-./build.sh build -t [picorv32|ibex|veer_el2|all]
+./build.sh build cpu [picorv32|ibex|veer_el2|all]
   -> build build/src/top_cpu/tb_picorv32.vvp
   -> build build/src/top_cpu/ibex/.../Vtb_ibex
   -> build build/src/top_cpu/veer_el2/obj_dir/Vtb_top
 
-./build.sh run [picorv32|ibex|veer_el2|all] [case|all]
+./build.sh build soc [picorv32|all]
+  -> build build/src/top_cpu/soc/tb_picosoc_soc_spike
+
+./build.sh run cpu [picorv32|ibex|veer_el2|all] [case|all]
   -> ensure required firmware and top artifacts
   -> execute the selected simulation matrix
+
+./build.sh run soc [picorv32|all] [case|all]
+  -> ensure required firmware and SoC top artifacts
+  -> execute Spike-driven SoC bus runs
 ```
 
-`./build.sh all` is equivalent to `./build.sh run all all`.
+`./build.sh all` is equivalent to `./build.sh run all all all`.
 
 The PicoRV32 run flow uses the project VPI module:
 
@@ -96,22 +103,22 @@ The repository also includes a bus-driven SoC validation mode where the
 simulator acts as the bus master and drives a shell SoC directly:
 
 ```bash
-./build.sh soc-spike [hello|pico_test|mem|all]
+./build.sh run soc [picorv32|all] [hello|pico_test|mem|all]
 ```
 
 This mode is intentionally different from retire-compare CPU cosim:
-- CPU mode (`run picorv32|ibex|veer_el2`) checks DUT retire events against Spike.
-- SoC mode (`soc-spike`) removes DUT CPU from the execution path and lets Spike
+- CPU mode (`run cpu picorv32|ibex|veer_el2`) checks DUT retire events against Spike.
+- SoC mode (`run soc picorv32`) removes DUT CPU from the execution path and lets Spike
   execute firmware while issuing bus transactions into SoC devices.
 
 ### SoC Structure
 
-`src/top_soc/picosoc_shell.sv` models a minimal SoC interconnect and devices.
+`src/top_soc/picosoc_soc.sv` models a minimal SoC interconnect and devices.
 
 Bus roles:
-- Master: Spike (through `tb_picosoc_shell_spike.cc` and `simif_t` MMIO hooks)
+- Master: Spike (through `tb_picosoc_soc_spike.cc` and `simif_t` MMIO hooks)
 - Slaves:
-  - RAM device (`picosoc_shell_mem`)
+  - RAM device (`picosoc_soc_mem`)
   - UART MMIO output
   - simulation-finish MMIO register
 
@@ -133,13 +140,13 @@ firmware.elf
   -> execute and access SoC via bus reads/writes
 ```
 
-The loader is implemented in `src/top_soc/tb_picosoc_shell_spike.cc`
+The loader is implemented in `src/top_soc/tb_picosoc_soc_spike.cc`
 (`preload_elf`), and writes RAM by calling the same bus transaction path used
 during execution.
 
 ### Evidence That Execution Uses SoC RAM
 
-`soc-spike` now prints bus access counters at runtime:
+`run soc ...` now prints bus access counters at runtime:
 
 ```text
 [SOC-BUS] rd_total=<N> rd_ram=<N> wr_total=<N> wr_ram=<N>
@@ -151,7 +158,7 @@ accidentally use only internal simulator memory.
 
 ### SoC Logs
 
-For each case, `soc-spike` writes:
+For each case, `run soc ...` writes:
 - run log: `log/run_soc_spike_<case>.log`
 - commit log: `log/soc_spike_<case>_commit.log`
 
@@ -333,7 +340,7 @@ firmware/pico_test/main.c
 firmware/mem/main.c
 ```
 
-`build.sh build -f` compiles common sources plus the selected case sources into
+`build.sh build firmware` compiles common sources plus the selected case sources into
 `build/firmware/<TEST_NAME>/obj`. `arith_basic_test` is no longer an active
 firmware case.
 

@@ -1,6 +1,6 @@
 `timescale 1 ns / 1 ps
 
-module tb_picosoc_shell_bus #(
+module picosoc_soc_bus #(
 	parameter integer MEM_WORDS = 32768
 ) (
 	input clk,
@@ -34,7 +34,7 @@ module tb_picosoc_shell_bus #(
 			finish_seen <= 1'b1;
 	end
 
-	picosoc_shell #(
+	picosoc_soc #(
 		.MEM_WORDS(MEM_WORDS)
 	) dut (
 		.clk(clk),

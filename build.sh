@@ -108,63 +108,9 @@ done
 
 usage() {
 	cat <<'EOF'
-Usage:
-  ./build.sh <command> [args]
-
-Common flows:
-  ./build.sh build spike
-      Build the shared local dependencies:
-        build/spike, build/pk, build/src/cosim/libspike.vpi
-
-  ./build.sh build -f [case|all]
-      Build firmware ELF/HEX artifacts under build/firmware/<case>/obj.
-      Default case selector: all
-
-  ./build.sh build -t [target|all]
-      Build simulation top artifacts.
-      Default target selector: all
-
-  ./build.sh run [target|all] [case|all]
-      Ensure missing dependencies, firmware, and top artifacts, then run the
-      selected simulation matrix.
-      Defaults: target=all, case=$TEST_NAME
-
-  ./build.sh all
-      Shortcut for: ./build.sh run all all
-
-Selectors:
-  target: picorv32, ibex, veer_el2, all
-  case:   hello, pico_test, mem, all
-
-Examples:
-  ./build.sh
-  ./build.sh build spike
-  ./build.sh build -f hello
-  ./build.sh build -t ibex
-  ./build.sh run picorv32 hello
-  ./build.sh run ibex pico_test
-  ./build.sh run veer_el2 hello
-  ./build.sh run all all
-
-  ./build.sh soc-memtest
-      Build and run the phase-1 PicoSoC shell memory read/write smoke test.
-
-  ./build.sh soc-spike [case]
-      Build and run phase-2 Spike-driven PicoSoC shell execution.
-      Default case selector: hello
-
-Clean:
-  ./build.sh clean
-      Remove generated firmware, top, cosim, cache, and log outputs.
-      Preserve slow dependency builds:
-        build/spike, build/spike-build, build/pk, build/pk-build
-
-  ./build.sh clean-all
-      Remove the full build directory plus log outputs.
-
 Frequently used environment overrides:
   FIRMWARE_CASES      Active case list used by all/run all all.
-                      Default: hello pico_test
+                      Default: hello pico_test mem
   RESET_VECTOR        Shared firmware reset vector. Default: 0x80000080
   LOG_DIR             Simulation log output directory. Default: log
   COSIM_LOG_PATH      Generic cosim compare log path override for all targets.
@@ -203,6 +149,55 @@ Frequently used environment overrides:
 
 Tool overrides:
   TOOLCHAIN_PREFIX, PYTHON, CXX, IVERILOG, VVP, FUSESOC, PKG_CONFIG
+
+Usage:
+  ./build.sh <command> [args]
+
+Common flows:
+  ./build.sh build spike
+      Build the shared local dependencies:
+        build/spike, build/pk, build/src/cosim/libspike.vpi
+
+  ./build.sh build firmware [case|all]
+      Build firmware ELF/HEX artifacts under build/firmware/<case>/obj.
+      Default case selector: all
+
+  ./build.sh build [cpu|soc|all] [target|all]
+      Build simulation top artifacts by mode.
+      Defaults: mode=cpu, target=all
+
+  ./build.sh run [cpu|soc|all] [target|all] [case|all]
+      Ensure missing dependencies, firmware, and top artifacts, then run the
+      selected simulation matrix.
+      Defaults: mode=cpu, target=all, case=$TEST_NAME
+
+  ./build.sh all
+      Shortcut for: ./build.sh run all all all
+
+Selectors:
+  mode:   cpu, soc, all
+  cpu target: picorv32, ibex, veer_el2, all
+  soc target: picorv32, all
+  case:   hello, pico_test, mem, all
+
+Examples:
+  ./build.sh
+  ./build.sh build spike
+  ./build.sh build firmware hello
+  ./build.sh build cpu ibex
+  ./build.sh build soc picorv32
+  ./build.sh run cpu picorv32 hello
+  ./build.sh run soc picorv32 mem
+  ./build.sh run all all all
+
+Clean:
+  ./build.sh clean
+      Remove generated firmware, top, cosim, cache, and log outputs.
+      Preserve slow dependency builds:
+        build/spike, build/spike-build, build/pk, build/pk-build
+
+  ./build.sh clean-all
+      Remove the full build directory plus log outputs.
 EOF
 }
 
@@ -252,8 +247,10 @@ require_dir() {
 }
 
 is_target() {
-	case "$1" in
-		picorv32|ibex|veer_el2|all)
+	local mode="$1"
+	local target="$2"
+	case "$mode:$target" in
+		cpu:picorv32|cpu:ibex|cpu:veer_el2|cpu:all|soc:picorv32|soc:all|all:all)
 			return 0
 			;;
 		*)
@@ -272,12 +269,18 @@ case_list() {
 }
 
 target_list() {
-	local selector="$1"
-	if [[ "$selector" == "all" ]]; then
-		printf '%s\n' picorv32 ibex veer_el2
-	else
+	local mode="$1"
+	local selector="$2"
+	if [[ "$selector" != "all" ]]; then
 		printf '%s\n' "$selector"
+		return 0
 	fi
+	case "$mode" in
+		cpu) printf '%s\n' picorv32 ibex veer_el2 ;;
+		soc) printf '%s\n' picorv32 ;;
+		all) printf '%s\n' picorv32 ibex veer_el2 ;;
+		*) return 1 ;;
+	esac
 }
 
 case_dir() {
@@ -1051,7 +1054,7 @@ sim_veer_el2() {
 	)
 }
 
-build_top() {
+build_top_cpu() {
 	local target="$1"
 	case "$target" in
 		picorv32)
@@ -1064,9 +1067,9 @@ build_top() {
 			build_veer_el2_top
 			;;
 		all)
-			build_top picorv32
-			build_top ibex
-			build_top veer_el2
+			build_top_cpu picorv32
+			build_top_cpu ibex
+			build_top_cpu veer_el2
 			;;
 		*)
 			printf 'error: unknown build target: %s\n\n' "$target" >&2
@@ -1084,6 +1087,45 @@ build_firmware() {
 	done < <(case_list "$selector")
 }
 
+build_soc_top() {
+	local target="$1"
+	case "$target" in
+		picorv32|all)
+			ensure_spike_deps
+			local soc_build_dir="$TOP_BUILD_DIR/soc"
+			local sim_exe="$soc_build_dir/tb_picosoc_soc_spike"
+			mkdir -p "$soc_build_dir"
+
+			local spike_pc_cflags spike_pc_libs
+			spike_pc_cflags="$(
+				PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+					"$PKG_CONFIG" --cflags riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
+			)"
+			spike_pc_libs="$(
+				PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+					"$PKG_CONFIG" --libs riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
+			)"
+
+			verilator --cc --exe --build \
+				-Mdir "$soc_build_dir/obj_dir" \
+				--top-module picosoc_soc_bus \
+				-I"$SRC_DIR/top_soc" \
+				-CFLAGS "-std=c++20 -include sys/syscall.h $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
+				-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
+				"$SRC_DIR/top_soc/picosoc_soc.sv" \
+				"$SRC_DIR/top_soc/picosoc_soc_bus.sv" \
+				"$SRC_DIR/top_soc/tb_picosoc_soc_spike.cc"
+
+			cp "$soc_build_dir/obj_dir/Vpicosoc_soc_bus" "$sim_exe"
+			;;
+		*)
+			printf 'error: unknown soc build target: %s\n\n' "$target" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+}
+
 build_command() {
 	local kind="${1:-}"
 	case "$kind" in
@@ -1095,23 +1137,38 @@ build_command() {
 			fi
 			build_spike_deps
 			;;
-		-f)
+		firmware)
 			shift
 			build_firmware "${1:-all}"
 			if (($# > 1)); then
-				printf 'error: build -f accepts at most one case selector\n\n' >&2
+				printf 'error: build firmware accepts at most one case selector\n\n' >&2
 				usage >&2
 				exit 2
 			fi
 			;;
-		-t)
+		cpu|soc)
+			local mode="$kind"
 			shift
-			build_top "${1:-all}"
+			local target="${1:-all}"
 			if (($# > 1)); then
-				printf 'error: build -t accepts at most one target selector\n\n' >&2
+				printf 'error: build %s accepts at most one target selector\n\n' "$mode" >&2
 				usage >&2
 				exit 2
 			fi
+			if ! is_target "$mode" "$target"; then
+				printf 'error: unknown %s build target: %s\n\n' "$mode" "$target" >&2
+				usage >&2
+				exit 2
+			fi
+			if [[ "$mode" == "cpu" ]]; then
+				build_top_cpu "$target"
+			else
+				build_soc_top "$target"
+			fi
+			;;
+		all)
+			build_top_cpu all
+			build_soc_top all
 			;;
 		*)
 			printf 'error: unknown build selector: %s\n\n' "${kind:-<missing>}" >&2
@@ -1121,7 +1178,7 @@ build_command() {
 	esac
 }
 
-run_one() {
+run_one_cpu() {
 	local target="$1"
 	local case_name="$2"
 	local elf_path hex_path veer_hex_path
@@ -1195,7 +1252,7 @@ detect_case_pass_status() {
 	printf '%s\n' "FAIL"
 }
 
-run_command() {
+run_command_cpu() {
 	local target="${1:-all}"
 	local case_selector="${2:-$TEST_NAME}"
 	local target_name case_name
@@ -1209,7 +1266,7 @@ run_command() {
 		exit 2
 	fi
 
-	if ! is_target "$target"; then
+	if ! is_target cpu "$target"; then
 		printf 'error: unknown run target: %s\n\n' "$target" >&2
 		usage >&2
 		exit 2
@@ -1220,7 +1277,7 @@ run_command() {
 			run_log="$LOG_DIR/run_${target_name}_${case_name}.log"
 			mkdir -p "$LOG_DIR"
 			printf '\n[RUN] target=%s case=%s log=%s\n' "$target_name" "$case_name" "$run_log"
-			if run_one "$target_name" "$case_name" 2>&1 | tee "$run_log"; then
+			if run_one_cpu "$target_name" "$case_name" 2>&1 | tee "$run_log"; then
 				sim_exit=0
 			else
 				sim_exit=$?
@@ -1239,7 +1296,7 @@ run_command() {
 
 			rows+=("$target_name|$case_name|$sim_exit|$pass_status|$cosim_status|$result|$run_log")
 		done < <(case_list "$case_selector")
-	done < <(target_list "$target")
+	done < <(target_list cpu "$target")
 
 	printf '\n'
 	printf '%-10s %-12s %-8s %-12s %-10s %-8s %s\n' "target" "case" "exit" "pass_marker" "cosim" "result" "run_log"
@@ -1255,10 +1312,6 @@ run_command() {
 		printf '\nerror: %d run(s) failed\n' "$fail_count" >&2
 		return 1
 	fi
-}
-
-all() {
-	run_command all all
 }
 
 clean() {
@@ -1282,46 +1335,13 @@ clean_all() {
 		"$TB_HOME/ibex_simple_system.log"
 }
 
-soc_memtest() {
+run_soc_spike() {
 	local soc_build_dir="$TOP_BUILD_DIR/soc"
-	local soc_vvp="$soc_build_dir/tb_picosoc_shell_mem.vvp"
-	mkdir -p "$soc_build_dir"
-	"$IVERILOG" -g2012 -o "$soc_vvp" \
-		"$SRC_DIR/top_soc/picosoc_shell.sv" \
-		"$SRC_DIR/top_soc/tb_picosoc_shell_mem.sv"
-	"$VVP" "$soc_vvp"
-}
-
-soc_spike() {
-	ensure_spike_deps
-
-	local soc_build_dir="$TOP_BUILD_DIR/soc"
-	local sim_exe="$soc_build_dir/tb_picosoc_shell_spike"
-	mkdir -p "$soc_build_dir"
-
-	local spike_pc_cflags spike_pc_libs
-	spike_pc_cflags="$(
-		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
-			"$PKG_CONFIG" --cflags riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
-	)"
-	spike_pc_libs="$(
-		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
-			"$PKG_CONFIG" --libs riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
-	)"
-
-	verilator --cc --exe --build \
-		-Mdir "$soc_build_dir/obj_dir" \
-		--top-module tb_picosoc_shell_bus \
-		-I"$SRC_DIR/top_soc" \
-		-CFLAGS "-std=c++20 -include sys/syscall.h $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
-		-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
-		"$SRC_DIR/top_soc/picosoc_shell.sv" \
-		"$SRC_DIR/top_soc/tb_picosoc_shell_bus.sv" \
-		"$SRC_DIR/top_soc/tb_picosoc_shell_spike.cc"
-
-	cp "$soc_build_dir/obj_dir/Vtb_picosoc_shell_bus" "$sim_exe"
-
-	local selector="${1:-hello}"
+	local sim_exe="$soc_build_dir/tb_picosoc_soc_spike"
+	if [[ ! -x "$sim_exe" ]]; then
+		build_soc_top picorv32
+	fi
+	local selector="${1:-$TEST_NAME}"
 	local case_name elf_path run_log result pass_count=0 fail_count=0
 	printf '\n'
 	printf '%-12s %-8s %s\n' "case" "result" "run_log"
@@ -1354,6 +1374,58 @@ soc_spike() {
 	fi
 }
 
+run_command_soc() {
+	local target="${1:-all}"
+	local case_selector="${2:-$TEST_NAME}"
+	if (($# > 2)); then
+		printf 'error: run soc accepts at most target and case selectors\n\n' >&2
+		usage >&2
+		exit 2
+	fi
+	if ! is_target soc "$target"; then
+		printf 'error: unknown soc run target: %s\n\n' "$target" >&2
+		usage >&2
+		exit 2
+	fi
+	case "$target" in
+		picorv32|all)
+			run_soc_spike "$case_selector"
+			;;
+	esac
+}
+
+run_command() {
+	local mode="${1:-cpu}"
+	local target="${2:-all}"
+	local case_selector="${3:-$TEST_NAME}"
+	if (($# > 3)); then
+		printf 'error: run accepts at most mode, target, and case selectors\n\n' >&2
+		usage >&2
+		exit 2
+	fi
+	case "$mode" in
+		cpu)
+			run_command_cpu "$target" "$case_selector"
+			;;
+		soc)
+			run_command_soc "$target" "$case_selector"
+			;;
+		all)
+			run_command_cpu all "$case_selector"
+			run_command_soc all "$case_selector"
+			;;
+		*)
+			printf 'error: unknown run mode: %s\n\n' "$mode" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+}
+
+all() {
+	run_command all all all
+}
+
 command="${1:-help}"
 case "$command" in
 	help|-h|--help)
@@ -1375,13 +1447,6 @@ case "$command" in
 		;;
 	clean-all)
 		clean_all
-		;;
-	soc-memtest)
-		soc_memtest
-		;;
-	soc-spike)
-		shift
-		soc_spike "${1:-hello}"
 		;;
 	*)
 		printf 'error: unknown command: %s\n\n' "$command" >&2

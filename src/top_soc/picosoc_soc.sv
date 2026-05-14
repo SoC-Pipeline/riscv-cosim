@@ -1,6 +1,6 @@
 `timescale 1 ns / 1 ps
 
-module picosoc_shell #(
+module picosoc_soc #(
 	parameter integer MEM_WORDS = 256,
 	parameter [31:0] RAM_BASE = 32'h8000_0000
 ) (
@@ -39,7 +39,7 @@ module picosoc_shell #(
 	assign mem_rdata = ram_sel ? ram_rdata :
 		((iomem_valid && iomem_ready) ? iomem_rdata : 32'h0000_0000);
 
-	picosoc_shell_mem #(
+	picosoc_soc_mem #(
 		.WORDS(MEM_WORDS)
 	) u_mem (
 		.clk(clk),
@@ -51,7 +51,7 @@ module picosoc_shell #(
 
 endmodule
 
-module picosoc_shell_mem #(
+module picosoc_soc_mem #(
 	parameter integer WORDS = 256
 ) (
 	input clk,
