@@ -12,6 +12,7 @@
 
 ## 测试 
 
+1. picorv32: ./build.sh run picorv32 hello
 1. ./build.sh run all all
 
 ## tools

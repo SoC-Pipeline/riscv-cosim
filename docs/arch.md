@@ -90,6 +90,71 @@ veer_el2 top
   -> feed VeeR retire trace PC/instruction events into CosimSession
 ```
 
+## SoC Mode (PicoRV32 Shell)
+
+The repository also includes a bus-driven SoC validation mode where the
+simulator acts as the bus master and drives a shell SoC directly:
+
+```bash
+./build.sh soc-spike [hello|pico_test|mem|all]
+```
+
+This mode is intentionally different from retire-compare CPU cosim:
+- CPU mode (`run picorv32|ibex|veer_el2`) checks DUT retire events against Spike.
+- SoC mode (`soc-spike`) removes DUT CPU from the execution path and lets Spike
+  execute firmware while issuing bus transactions into SoC devices.
+
+### SoC Structure
+
+`src/top_soc/picosoc_shell.sv` models a minimal SoC interconnect and devices.
+
+Bus roles:
+- Master: Spike (through `tb_picosoc_shell_spike.cc` and `simif_t` MMIO hooks)
+- Slaves:
+  - RAM device (`picosoc_shell_mem`)
+  - UART MMIO output
+  - simulation-finish MMIO register
+
+Address map used by this shell:
+- `0x80000000` region: RAM
+- `0x10000000`: UART TX byte output
+- `0x20000000`: finish register (`123456789` marks PASS/finish)
+
+### ELF Load Path In SoC Mode
+
+SoC mode does not depend on PicoRV32 `firmware.hex` preload.
+It uses:
+
+```text
+firmware.elf
+  -> parse ELF PT_LOAD segments
+  -> write segment bytes into SoC RAM through bus writes
+  -> set Spike PC to ELF entry
+  -> execute and access SoC via bus reads/writes
+```
+
+The loader is implemented in `src/top_soc/tb_picosoc_shell_spike.cc`
+(`preload_elf`), and writes RAM by calling the same bus transaction path used
+during execution.
+
+### Evidence That Execution Uses SoC RAM
+
+`soc-spike` now prints bus access counters at runtime:
+
+```text
+[SOC-BUS] rd_total=<N> rd_ram=<N> wr_total=<N> wr_ram=<N>
+```
+
+`rd_ram > 0` is required; if no RAM reads are observed in the RAM address
+window, the run fails. This guards against false pass where execution would
+accidentally use only internal simulator memory.
+
+### SoC Logs
+
+For each case, `soc-spike` writes:
+- run log: `log/run_soc_spike_<case>.log`
+- commit log: `log/soc_spike_<case>_commit.log`
+
 ## Co-Simulation Split
 
 ### Architecture Overview
@@ -248,7 +313,7 @@ when the runtime flow does not override the selected ELF or HEX path. The
 Active firmware cases are listed by `FIRMWARE_CASES`, which defaults to:
 
 ```text
-hello pico_test
+hello pico_test mem
 ```
 
 Shared firmware runtime code lives under `firmware/common`:
@@ -265,6 +330,7 @@ Case directories contain only case-specific program code:
 ```text
 firmware/hello/main.c
 firmware/pico_test/main.c
+firmware/mem/main.c
 ```
 
 `build.sh build -f` compiles common sources plus the selected case sources into

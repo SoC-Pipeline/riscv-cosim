@@ -1,132 +1,119 @@
 # RISC-V Co-Simulation
 
-This repository builds RISC-V firmware images and runs RTL co-simulation
-targets. PicoRV32 uses Icarus Verilog with the project VPI bridge. Ibex uses a
-project-owned Verilator `tb_ibex` top with the upstream Ibex DPI co-simulation
-checker.
+This repository builds firmware and runs RISC-V co-simulation flows for:
+- CPU retire-compare mode: `picorv32`, `ibex`, `veer_el2`
+- SoC bus-driven mode (CPU-less shell): `soc-spike`
 
-## Layout
+## Repository Overview
 
 ```text
-src/top_cpu/       Project-owned Verilog/SystemVerilog testbench entry points
-src/cosim/     Project VPI bridge C++ sources and Spike backend
-firmware/      Firmware tests and linker scripts
-scripts/       Python log and hex utilities
-external/      External dependencies such as PicoRV32, Ibex, Spike, and pk
-build/         Generated firmware, dependency, simulation, and VPI artifacts
-docs/          Architecture notes
+                 +-----------------------------+
+                 |        firmware/*           |
+                 |  hello / pico_test / mem    |
+                 +--------------+--------------+
+                                |
+                                v
+                      +---------+---------+
+                      |       build.sh    |
+                      | build / run / all |
+                      +----+---------+----+
+                           |         |
+          +----------------+         +----------------+
+          v                                       v
++---------+----------------------+    +------------+-------------+
+| CPU Cosim Targets              |    | SoC Mode (CPU-less)      |
+| picorv32 / ibex / veer_el2     |    | picosoc shell + Spike bus|
++---------+----------------------+    +------------+-------------+
+          |                                        |
+          v                                        v
++---------+----------------------+    +------------+-------------+
+| src/top_cpu + src/cosim        |    | src/top_soc               |
+| retire events <-> CosimSession |    | ELF preload -> RAM bus RW |
++---------+----------------------+    +------------+-------------+
+          |                                        |
+          +-------------------+--------------------+
+                              v
+                    +---------+---------+
+                    |      log/ dump/   |
+                    | run logs + commits|
+                    +-------------------+
 ```
 
-## Tools
-
-Load the expected toolchain modules before building:
+## Prerequisites
 
 ```bash
 module load riscv-toolchain/master-v20251230 openEDA/verilator/v5.010
 ```
 
-The build uses `riscv32-unknown-elf-*`, `iverilog`, and `vvp` from the loaded
-tool environments. Spike is built from the Ibex-compatible source under
-`external/ibex/external/riscv-isa-sim` into `build/spike`; pk is built from
-`external/riscv-pk` into `build/pk`.
-
-The Ibex target uses Verilator, FuseSoC, and the local Spike pkg-config
-packages from `build/spike`. The expected module set for Ibex is:
+Initialize submodules on fresh checkout:
 
 ```bash
-module load riscv-toolchain/master-v20251230 openEDA/verilator/v5.010
+git submodule update --init --recursive
 ```
 
-`./build.sh build -t ibex` and `./build.sh run ibex` check for Verilator
-`5.010` before starting the Ibex flow. Set `IBEX_VERILATOR_VERSION=any` only
-when intentionally testing another Verilator version.
+## Quick Start
 
-PicoRV32 and Ibex use the same firmware ELF by default:
-`build/firmware/<test>/obj/firmware.elf`. The shared reset vector is
-`RESET_VECTOR`, defaulting to `0x80000080`. PicoRV32 receives that value as
-`PROGADDR_RESET`; Ibex derives `BootAddr` from the same value because the core
-fetches from `{boot_addr_i[31:8], 8'h80}` after reset.
-
-## Run
+Run full CPU-target regression:
 
 ```bash
-./build.sh all
+./build.sh run all all
 ```
 
-Build slow local dependencies once with:
+Build slow dependencies once:
 
 ```bash
 ./build.sh build spike
 ```
 
-Build firmware or simulation tops explicitly with:
+Build firmware/top explicitly:
 
 ```bash
 ./build.sh build -f all
-./build.sh build -t picorv32
-./build.sh build -t ibex
+./build.sh build -t all
 ```
 
-Run a specific simulation target and firmware case with:
+Run one target/case:
 
 ```bash
 ./build.sh run picorv32 hello
 ./build.sh run ibex pico_test
+./build.sh run veer_el2 mem
 ```
 
-The default test is `hello`. Override it with `TEST_NAME=<name>` for a specific
-firmware case, or set `FIRMWARE_CASES` to choose the case list used by
-`./build.sh all` and `./build.sh run all all`.
-
-For PicoRV32 bridge mode selection, set `PICORV32_COSIM_IF`. The default is
-`vpi`. The current Icarus (`iverilog`/`vvp`) flow does not support the project
-`dpi` prototype mode, so `PICORV32_COSIM_IF=dpi` exits with a clear error and
-keeps `vpi` as the supported runtime path.
-
-Default Spike commit logs are emitted per target:
-
-```text
-dump/picorv32_spike_commit.log
-dump/ibex_spike_commit.log
-dump/veer_el2_spike_commit.log
-```
-
-Project compare logs remain wrapper-specific:
-
-```text
-dump/picorv32_cosim_result.log
-dump/veer_el2_cosim_result.log
-```
-
-`env.sh` has been removed. Override build settings with shell environment
-variables before invoking `build.sh`; the script resolves and exports defaults
-internally for its subcommands:
+Run SoC bus-driven mode:
 
 ```bash
-export TEST_NAME=hello
-export BUILD_JOBS=8
-export RESET_VECTOR=0x80000080
-./build.sh run ibex hello
+./build.sh soc-memtest
+./build.sh soc-spike hello
+./build.sh soc-spike all
 ```
 
-`./build.sh clean` removes generated firmware, top, cosim, cache, dump, and log
-outputs while preserving `build/spike`, `build/spike-build`, `build/pk`, and
-`build/pk-build`. Use `./build.sh clean-all` to remove the whole `build/`
-directory plus generated dump/log outputs.
+## Common Environment Overrides
 
-Generated files are written under:
+```bash
+export BUILD_JOBS=8
+export RESET_VECTOR=0x80000080
+export FIRMWARE_CASES="hello pico_test mem"
+```
+
+## Output Locations
+
+Main generated artifacts:
 
 ```text
 build/firmware/<test>/obj/
 build/spike/
 build/pk/
-build/src/cosim/libspike.so
-build/src/cosim/libspike.vpi
-build/src/top_cpu/tb_picorv32.vvp
 build/src/top_cpu/ibex/
+build/src/top_cpu/veer_el2/
+build/src/top_cpu/soc/
+log/
 dump/
 ```
 
-## Documentation
+`./build.sh clean` keeps spike/pk build caches.
+`./build.sh clean-all` removes the whole `build/` directory.
 
-See `docs/arch.md` for the build flow and path ownership model.
+## More Details
+
+See `docs/arch.md` for architecture and layer-level design details.

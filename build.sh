@@ -84,7 +84,7 @@ set_default VEER_EL2_RAM_SIZE 0x00020000
 set_default VEER_EL2_MAX_CYCLES 2000000
 set_default VEER_EL2_COSIM_LOG "$LOG_DIR/veer_el2_cosim_result.log"
 set_default VEER_EL2_SPIKE_COMMIT_LOG "$LOG_DIR/veer_el2_spike_commit.log"
-set_default FIRMWARE_CASES "hello pico_test"
+set_default FIRMWARE_CASES "hello pico_test mem"
 
 set_default PYTHON python3
 set_default CXX g++
@@ -134,7 +134,7 @@ Common flows:
 
 Selectors:
   target: picorv32, ibex, veer_el2, all
-  case:   hello, pico_test, all
+  case:   hello, pico_test, mem, all
 
 Examples:
   ./build.sh
@@ -145,6 +145,13 @@ Examples:
   ./build.sh run ibex pico_test
   ./build.sh run veer_el2 hello
   ./build.sh run all all
+
+  ./build.sh soc-memtest
+      Build and run the phase-1 PicoSoC shell memory read/write smoke test.
+
+  ./build.sh soc-spike [case]
+      Build and run phase-2 Spike-driven PicoSoC shell execution.
+      Default case selector: hello
 
 Clean:
   ./build.sh clean
@@ -191,6 +198,8 @@ Frequently used environment overrides:
                       VeeR EL2 Spike commit log. Default: log/veer_el2_spike_commit.log
   VEER_EL2_SPIKE_DTB  Prebuilt DTB used by Spike for VeeR cosim.
                       Default: build/src/top_cpu/veer_el2/spike_veer_el2.dtb
+  SOC_SPIKE_VERBOSE   Enable verbose SoC Spike debug prints (entry/step logs).
+                      Default: 0
 
 Tool overrides:
   TOOLCHAIN_PREFIX, PYTHON, CXX, IVERILOG, VVP, FUSESOC, PKG_CONFIG
@@ -1273,6 +1282,78 @@ clean_all() {
 		"$TB_HOME/ibex_simple_system.log"
 }
 
+soc_memtest() {
+	local soc_build_dir="$TOP_BUILD_DIR/soc"
+	local soc_vvp="$soc_build_dir/tb_picosoc_shell_mem.vvp"
+	mkdir -p "$soc_build_dir"
+	"$IVERILOG" -g2012 -o "$soc_vvp" \
+		"$SRC_DIR/top_soc/picosoc_shell.sv" \
+		"$SRC_DIR/top_soc/tb_picosoc_shell_mem.sv"
+	"$VVP" "$soc_vvp"
+}
+
+soc_spike() {
+	ensure_spike_deps
+
+	local soc_build_dir="$TOP_BUILD_DIR/soc"
+	local sim_exe="$soc_build_dir/tb_picosoc_shell_spike"
+	mkdir -p "$soc_build_dir"
+
+	local spike_pc_cflags spike_pc_libs
+	spike_pc_cflags="$(
+		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+			"$PKG_CONFIG" --cflags riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
+	)"
+	spike_pc_libs="$(
+		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+			"$PKG_CONFIG" --libs riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
+	)"
+
+	verilator --cc --exe --build \
+		-Mdir "$soc_build_dir/obj_dir" \
+		--top-module tb_picosoc_shell_bus \
+		-I"$SRC_DIR/top_soc" \
+		-CFLAGS "-std=c++20 -include sys/syscall.h $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
+		-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
+		"$SRC_DIR/top_soc/picosoc_shell.sv" \
+		"$SRC_DIR/top_soc/tb_picosoc_shell_bus.sv" \
+		"$SRC_DIR/top_soc/tb_picosoc_shell_spike.cc"
+
+	cp "$soc_build_dir/obj_dir/Vtb_picosoc_shell_bus" "$sim_exe"
+
+	local selector="${1:-hello}"
+	local case_name elf_path run_log result pass_count=0 fail_count=0
+	printf '\n'
+	printf '%-12s %-8s %s\n' "case" "result" "run_log"
+	printf '%-12s %-8s %s\n' "----" "------" "-------"
+	while IFS= read -r case_name; do
+		ensure_firmware_case "$case_name"
+		elf_path="$(case_elf_path "$case_name")"
+		run_log="$LOG_DIR/run_soc_spike_${case_name}.log"
+		mkdir -p "$LOG_DIR"
+		printf '\n[SOC-SPIKE] run case=%s elf=%s log=%s\n' "$case_name" "$elf_path" "$run_log"
+		local commit_log="$LOG_DIR/soc_spike_${case_name}_commit.log"
+		if LD_LIBRARY_PATH="$SPIKE_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+			SOC_CASE_NAME="$case_name" \
+			TEST_ELF="$elf_path" \
+			MY_ISA="$MY_ISA" \
+			SOC_SPIKE_COMMIT_LOG="${SOC_SPIKE_COMMIT_LOG:-$commit_log}" \
+			SOC_SPIKE_VERBOSE="${SOC_SPIKE_VERBOSE:-0}" \
+			"$sim_exe" 2>&1 | tee "$run_log"; then
+			result="PASS"
+			pass_count=$((pass_count + 1))
+		else
+			result="FAIL"
+			fail_count=$((fail_count + 1))
+		fi
+		printf '%-12s %-8s %s\n' "$case_name" "$result" "$run_log"
+	done < <(case_list "$selector")
+	printf '\n[SOC-SPIKE] summary: pass=%d fail=%d\n' "$pass_count" "$fail_count"
+	if ((fail_count > 0)); then
+		return 1
+	fi
+}
+
 command="${1:-help}"
 case "$command" in
 	help|-h|--help)
@@ -1294,6 +1375,13 @@ case "$command" in
 		;;
 	clean-all)
 		clean_all
+		;;
+	soc-memtest)
+		soc_memtest
+		;;
+	soc-spike)
+		shift
+		soc_spike "${1:-hello}"
 		;;
 	*)
 		printf 'error: unknown command: %s\n\n' "$command" >&2
