@@ -1424,9 +1424,7 @@ run_soc_spike() {
 	fi
 	local selector="${1:-$TEST_NAME}"
 	local case_name elf_path run_log result pass_status sim_exit pass_count=0 fail_count=0
-	printf '\n'
-	printf '%-12s %-8s %-12s %-8s %s\n' "case" "exit" "pass_marker" "result" "run_log"
-	printf '%-12s %-8s %-12s %-8s %s\n' "----" "----" "-----------" "------" "-------"
+	local -a rows=()
 	while IFS= read -r case_name; do
 		ensure_firmware_case "$case_name"
 		elf_path="$(case_elf_path "$case_name")"
@@ -1453,8 +1451,19 @@ run_soc_spike() {
 			result="FAIL"
 			fail_count=$((fail_count + 1))
 		fi
-		printf '%-12s %-8s %-12s %-8s %s\n' "$case_name" "$sim_exit" "$pass_status" "$result" "$run_log"
+		rows+=("picorv32|$case_name|$sim_exit|$pass_status|$result|$run_log")
 	done < <(case_list "$selector")
+
+	printf '\n'
+	printf '%-10s %-12s %-8s %-12s %-8s %s\n' "target" "case" "exit" "pass_marker" "result" "run_log"
+	printf '%-10s %-12s %-8s %-12s %-8s %s\n' "------" "----" "----" "-----------" "------" "-------"
+	local row target_name
+	for row in "${rows[@]}"; do
+		IFS='|' read -r target_name case_name sim_exit pass_status result run_log <<<"$row"
+		printf '%-10s %-12s %-8s %-12s %-8s %s\n' \
+			"$target_name" "$case_name" "$sim_exit" "$pass_status" "$result" "$run_log"
+	done
+
 	printf '\n[SOC-SPIKE] summary: pass=%d fail=%d\n' "$pass_count" "$fail_count"
 	if ((fail_count > 0)); then
 		return 1
