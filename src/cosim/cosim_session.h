@@ -54,6 +54,7 @@ public:
 private:
     bool reference_entry_valid(uint64_t pc, uint32_t instr) const;
     bool is_ebreak(uint32_t instr) const;
+    bool can_compare_retire() const;
     void ensure_log_open();
 
     std::unique_ptr<RiscvSimulator> simulator_;

@@ -20,9 +20,13 @@ filesets:
       - ../cosim/spike_simulator.h: { is_include_file: true }
       - ../cosim/cosim_bridge.h: { is_include_file: true }
       - ../cosim/cosim_session.h: { is_include_file: true }
+      - ../cosim/cosim_config_policy.h: { is_include_file: true }
+      - ../cosim/simulator_factory.h: { is_include_file: true }
       - ../cosim/elf_utils.h: { is_include_file: true }
       - ../cosim/cosim_bridge.cc: { file_type: cppSource }
       - ../cosim/cosim_session.cc: { file_type: cppSource }
+      - ../cosim/cosim_config_policy.cc: { file_type: cppSource }
+      - ../cosim/simulator_factory.cc: { file_type: cppSource }
       - ../cosim/spike_simulator.cc: { file_type: cppSource }
       - ../cosim/elf_utils.cc: { file_type: cppSource }
       - tb_ibex_verilator_waiver.vlt: { file_type: vlt }

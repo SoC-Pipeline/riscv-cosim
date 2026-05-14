@@ -160,6 +160,14 @@ Frequently used environment overrides:
                       Default: hello pico_test
   RESET_VECTOR        Shared firmware reset vector. Default: 0x80000080
   LOG_DIR             Simulation log output directory. Default: log
+  COSIM_LOG_PATH      Generic cosim compare log path override for all targets.
+  SPIKE_COMMIT_LOG_PATH
+                      Generic Spike commit log path override for all targets.
+                      Priority:
+                        1) COSIM_LOG_PATH/SPIKE_COMMIT_LOG_PATH
+                        2) target-specific vars below
+                        3) dump/<cpu_name>_cosim_result.log and
+                           dump/<cpu_name>_spike_commit.log
   PICORV32_COSIM_LOG  PicoRV32 cosim compare log. Default: dump/picorv32_cosim_result.log
   PICORV32_SPIKE_COMMIT_LOG
                       PicoRV32 Spike commit log. Default: dump/picorv32_spike_commit.log
@@ -626,6 +634,8 @@ vpi() {
 		"$COSIM_SRC_DIR/spike_dpi.cc"
 		"$COSIM_SRC_DIR/cosim_bridge.cc"
 		"$COSIM_SRC_DIR/cosim_session.cc"
+		"$COSIM_SRC_DIR/cosim_config_policy.cc"
+		"$COSIM_SRC_DIR/simulator_factory.cc"
 		"$COSIM_SRC_DIR/elf_utils.cc"
 		"$COSIM_SRC_DIR/spike_simulator.cc"
 	)
@@ -986,12 +996,14 @@ build_veer_el2_top() {
 			"$VEER_EL2_DIR/testbench/axi4_mux/axi_register_rd.v" \
 			"$VEER_EL2_DIR/testbench/axi4_mux/axi_register_wr.v" \
 			"$VEER_EL2_DIR/testbench/axi4_mux/priority_encoder.v" \
-			"$SRC_TOP_DIR/tb_veer_el2.sv" \
-			"$SRC_TOP_DIR/tb_veer_el2_cosim.cc" \
-			"$COSIM_SRC_DIR/cosim_bridge.cc" \
-			"$COSIM_SRC_DIR/cosim_session.cc" \
-			"$COSIM_SRC_DIR/elf_utils.cc" \
-			"$COSIM_SRC_DIR/spike_simulator.cc" \
+		"$SRC_TOP_DIR/tb_veer_el2.sv" \
+		"$SRC_TOP_DIR/tb_veer_el2_cosim.cc" \
+		"$COSIM_SRC_DIR/cosim_bridge.cc" \
+		"$COSIM_SRC_DIR/cosim_session.cc" \
+		"$COSIM_SRC_DIR/cosim_config_policy.cc" \
+		"$COSIM_SRC_DIR/simulator_factory.cc" \
+		"$COSIM_SRC_DIR/elf_utils.cc" \
+		"$COSIM_SRC_DIR/spike_simulator.cc" \
 			--top-module tb_top \
 			--exe \
 			--autoflush \

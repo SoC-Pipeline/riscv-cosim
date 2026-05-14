@@ -5,6 +5,7 @@
 #include <string>
 
 struct CosimConfig {
+    std::string backend = "spike";
     std::string elf_path;
     std::string isa = "RV32IMC";
     uint64_t memory_base = 0x80000000;
@@ -19,10 +20,19 @@ struct CosimConfig {
     uint32_t sim_finish_value = 123456789;
 };
 
+struct SimulatorCapabilities {
+    bool instruction_fetch = true;
+    bool csr_access = true;
+    bool interrupt_sync = true;
+    bool debug_req = true;
+    bool finish_detection = true;
+};
+
 class RiscvSimulator {
 public:
     virtual ~RiscvSimulator() = default;
 
+    virtual SimulatorCapabilities capabilities() const = 0;
     virtual void init(const CosimConfig& config) = 0;
     virtual void step(uint64_t count) = 0;
     virtual uint64_t pc() const = 0;

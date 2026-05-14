@@ -1,6 +1,6 @@
 #include "cosim_session.h"
 
-#include "spike_simulator.h"
+#include "simulator_factory.h"
 
 #include <iomanip>
 #include <iostream>
@@ -20,7 +20,7 @@ void CosimSession::init(const CosimConfig& config)
     reset();
 
     config_ = config;
-    simulator_ = std::make_unique<SpikeSimulator>();
+    simulator_ = create_simulator(config_);
     simulator_->init(config_);
     initialized_ = true;
 
@@ -36,6 +36,13 @@ void CosimSession::retire(uint32_t dut_pc, uint32_t dut_instr)
         throw std::runtime_error("cosim already finished");
     }
     if (reference_done_) {
+        return;
+    }
+    if (!can_compare_retire()) {
+        ++pass_count_;
+        ++compare_index_;
+        (void)dut_pc;
+        (void)dut_instr;
         return;
     }
 
@@ -99,6 +106,11 @@ bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint
         errors_.push_back(msg);
         ++fail_count_;
     };
+    const SimulatorCapabilities caps = simulator_->capabilities();
+    if (!caps.csr_access && !caps.interrupt_sync && !caps.debug_req) {
+        push_error("backend does not support step-detail synchronization requirements");
+        return false;
+    }
 
     uint64_t before_pc = simulator_->pc();
     uint64_t before_regs[32] = {0};
@@ -203,7 +215,7 @@ bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint
 
 void CosimSession::set_csr(unsigned csr_num, uint32_t value)
 {
-    if (!simulator_) {
+    if (!simulator_ || !simulator_->capabilities().csr_access) {
         return;
     }
     constexpr unsigned kCsrMstatus = 0x300;
@@ -252,7 +264,7 @@ uint32_t CosimSession::get_csr(unsigned csr_num) const
 void CosimSession::set_mip(uint32_t pre_mip, uint32_t post_mip)
 {
     (void)post_mip;
-    if (!simulator_) {
+    if (!simulator_ || !simulator_->capabilities().interrupt_sync) {
         return;
     }
     simulator_->set_mip(pre_mip);
@@ -260,7 +272,7 @@ void CosimSession::set_mip(uint32_t pre_mip, uint32_t post_mip)
 
 void CosimSession::set_nmi(bool nmi)
 {
-    if (!simulator_) {
+    if (!simulator_ || !simulator_->capabilities().interrupt_sync) {
         return;
     }
     simulator_->set_nmi(nmi);
@@ -273,7 +285,7 @@ void CosimSession::set_nmi_int(bool nmi_int)
 
 void CosimSession::set_debug_req(bool debug_req)
 {
-    if (!simulator_) {
+    if (!simulator_ || !simulator_->capabilities().debug_req) {
         return;
     }
     simulator_->set_debug_req(debug_req);
@@ -377,6 +389,11 @@ bool CosimSession::reference_entry_valid(uint64_t pc, uint32_t instr) const
 bool CosimSession::is_ebreak(uint32_t instr) const
 {
     return instr == 0x00009002 || instr == 0x00100073;
+}
+
+bool CosimSession::can_compare_retire() const
+{
+    return simulator_ && simulator_->capabilities().instruction_fetch;
 }
 
 void CosimSession::ensure_log_open()

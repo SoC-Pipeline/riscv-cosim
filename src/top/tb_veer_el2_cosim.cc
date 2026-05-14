@@ -1,4 +1,5 @@
 #include "cosim_bridge.h"
+#include "cosim_config_policy.h"
 
 #include "Vtb_top.h"
 #include "verilated.h"
@@ -39,16 +40,18 @@ double sc_time_stamp() {
 }
 
 extern "C" void veer_cosim_init(const char *elf_path) {
-    CosimConfig config;
-    config.elf_path = elf_path == nullptr ? "" : elf_path;
-    config.isa = env_string("MY_ISA", "RV32IMC");
-    config.memory_base = env_u64("VEER_EL2_RAM_BASE", 0x80000000u);
-    config.memory_size = env_u64("VEER_EL2_RAM_SIZE", 128 * 1024u);
-    config.log_path = env_string("VEER_EL2_COSIM_LOG", "dump/veer_el2_cosim_result.log");
-    config.commit_log_path = env_string("VEER_EL2_SPIKE_COMMIT_LOG", "dump/veer_el2_spike_commit.log");
-    config.dtb_file = env_string("VEER_EL2_SPIKE_DTB", "");
-    config.dtb_enabled = false;
-    config.sim_mmio_enabled = true;
+    const CosimConfig config = cosim::BuildCosimConfig(
+        cosim::CosimPolicyArgs{
+            .cpu_name = "veer_el2",
+            .elf_path = elf_path == nullptr ? "" : elf_path,
+            .isa = env_string("MY_ISA", "RV32IMC"),
+            .memory_base = env_u64("VEER_EL2_RAM_BASE", 0x80000000u),
+            .memory_size = env_u64("VEER_EL2_RAM_SIZE", 128 * 1024u),
+            .dtb_enabled = false,
+            .dtb_file = env_string("VEER_EL2_SPIKE_DTB", ""),
+            .sim_mmio_enabled = true
+        },
+        "VEER_EL2_COSIM_LOG", "VEER_EL2_SPIKE_COMMIT_LOG");
 
     if (cosim_bridge_init(&config) != 0) {
         std::cerr << "failed to initialize cosim bridge" << std::endl;

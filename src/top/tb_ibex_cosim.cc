@@ -19,6 +19,7 @@
 
 #include "Vtb_ibex__Syms.h"
 #include "cosim_bridge.h"
+#include "cosim_config_policy.h"
 #include "cosim.h"
 #include "ibex_pcounts.h"
 #include "verilated_toplevel.h"
@@ -119,15 +120,17 @@ class TbIbexCosim {
     (void)mhpm_counter_num;
     (void)dm_start_addr;
     (void)dm_end_addr;
-    CosimConfig config;
-    config.elf_path = GetElfPath();
-    config.isa = GetIsaString();
-    config.memory_base = ram_base_;
-    config.memory_size = kRamSizeBytes;
-    config.log_path = GetCosimResultLogPath();
-    config.commit_log_path = GetSpikeCommitLogPath();
-    config.dtb_enabled = false;
-    config.sim_mmio_enabled = true;
+    const CosimConfig config = cosim::BuildCosimConfig(
+        cosim::CosimPolicyArgs{
+            .cpu_name = "ibex",
+            .elf_path = GetElfPath(),
+            .isa = GetIsaString(),
+            .memory_base = ram_base_,
+            .memory_size = kRamSizeBytes,
+            .dtb_enabled = false,
+            .sim_mmio_enabled = true
+        },
+        "IBEX_COSIM_LOG", "SPIKE_COMMIT_LOG", "IBEX_SPIKE_COMMIT_LOG");
 
     if (cosim_bridge_init(&config) != 0) {
       throw std::runtime_error("failed to initialize cosim bridge");
@@ -215,16 +218,6 @@ class TbIbexCosim {
     }
 
     return base + extensions;
-  }
-
-  std::string GetSpikeCommitLogPath() const {
-    const char *path = std::getenv("SPIKE_COMMIT_LOG");
-    return path == nullptr ? "dump/ibex_spike_commit.log" : path;
-  }
-
-  std::string GetCosimResultLogPath() const {
-    const char *path = std::getenv("IBEX_COSIM_LOG");
-    return path == nullptr ? "dump/ibex_cosim_result.log" : path;
   }
 
   std::string GetElfPath() const {

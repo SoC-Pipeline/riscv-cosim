@@ -10,6 +10,7 @@
 #include <string>
 
 #include "cosim_bridge.h"
+#include "cosim_config_policy.h"
 
 #ifdef VPI_WRAPPER
     #include "vpi_user.h"
@@ -112,14 +113,17 @@ extern "C" {
 
         const char* init_stage = "begin";
         try {
-            CosimConfig config;
-            config.elf_path = elf_path;
-            config.isa = "RV32IMC";
-            config.memory_base = 0x80000000;
-            config.memory_size = 128 * 1024;
-            config.log_path = env_string("PICORV32_COSIM_LOG", "dump/picorv32_cosim_result.log");
-            config.commit_log_path = env_string("PICORV32_SPIKE_COMMIT_LOG", "dump/picorv32_spike_commit.log");
-            config.sim_mmio_enabled = true;
+            const CosimConfig config = cosim::BuildCosimConfig(
+                cosim::CosimPolicyArgs{
+                    .cpu_name = "picorv32",
+                    .elf_path = elf_path,
+                    .isa = "RV32IMC",
+                    .memory_base = 0x80000000,
+                    .memory_size = 128 * 1024,
+                    .dtb_enabled = false,
+                    .sim_mmio_enabled = true
+                },
+                "PICORV32_COSIM_LOG", "PICORV32_SPIKE_COMMIT_LOG");
 
             init_stage = "ELF file check";
             std::ifstream elf_file_chk(elf_path, std::ios::ate | std::ios::binary);
@@ -248,14 +252,17 @@ extern "C" {
     };
 #elif DPI_WRAPPER
     void cosim_dpi_init() {
-        CosimConfig config;
-        config.elf_path = env_string("TEST_ELF", "build/firmware/hello/obj/firmware.elf");
-        config.isa = env_string("MY_ISA", "RV32IMC");
-        config.memory_base = 0x80000000;
-        config.memory_size = 128 * 1024;
-        config.log_path = env_string("PICORV32_COSIM_LOG", "dump/picorv32_cosim_result.log");
-        config.commit_log_path = env_string("PICORV32_SPIKE_COMMIT_LOG", "dump/picorv32_spike_commit.log");
-        config.sim_mmio_enabled = true;
+        const CosimConfig config = cosim::BuildCosimConfig(
+            cosim::CosimPolicyArgs{
+                .cpu_name = "picorv32",
+                .elf_path = env_string("TEST_ELF", "build/firmware/hello/obj/firmware.elf"),
+                .isa = env_string("MY_ISA", "RV32IMC"),
+                .memory_base = 0x80000000,
+                .memory_size = 128 * 1024,
+                .dtb_enabled = false,
+                .sim_mmio_enabled = true
+            },
+            "PICORV32_COSIM_LOG", "PICORV32_SPIKE_COMMIT_LOG");
         (void)cosim_bridge_init(&config);
     }
 

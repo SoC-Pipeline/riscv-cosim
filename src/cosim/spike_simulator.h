@@ -11,6 +11,7 @@ public:
     SpikeSimulator();
     ~SpikeSimulator() override;
 
+    SimulatorCapabilities capabilities() const override;
     void init(const CosimConfig& config) override;
     void step(uint64_t count) override;
     uint64_t pc() const override;

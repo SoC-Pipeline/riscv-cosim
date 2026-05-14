@@ -146,10 +146,34 @@ $cosim_get_status(pass_count, fail_count)
 `src/cosim/riscv_simulator.h` defines the neutral reference-simulator operations
 used by the current scoreboard: initialize, step, read PC, fetch an instruction,
 read a register, CSR sync, interrupt/debug sync, and finished-state query.
+It also defines `SimulatorCapabilities`, used by `CosimSession` to gate optional
+behavior when a backend does not support all synchronization channels.
 
 `src/cosim/spike_simulator.cc` is the only implemented backend in this change.
 It owns Spike configuration, simulator, memory, and processor state, and it uses
 the local Spike installation under `build/spike`.
+
+`src/cosim/simulator_factory.cc` maps `CosimConfig.backend` to a backend
+implementation. Current default is `backend=spike`.
+
+### Adding A New Simulator Backend
+
+To add a new backend with minimal changes:
+
+1. Implement a new `RiscvSimulator` subclass in `src/cosim/`.
+2. Implement `capabilities()` accurately for that backend.
+3. Register backend creation in `simulator_factory.cc` using a new backend name.
+4. Ensure build scripts include the new backend source files.
+
+Capability guidance:
+- `instruction_fetch=false`: `CosimSession::retire()` degrades to non-compare
+  pass counting and skips golden instruction matching.
+- `csr_access=false`: CSR synchronization APIs are ignored.
+- `interrupt_sync=false`: `set_mip`/`set_nmi` sync APIs are ignored.
+- `debug_req=false`: debug request sync API is ignored.
+
+This keeps wrappers and `cosim_bridge` stable while allowing backends with
+different feature surfaces.
 
 The repository shares one local Spike build and now also shares the project
 `CosimSession` execution path across PicoRV32, Ibex, and VeeR EL2.
@@ -172,6 +196,16 @@ value. `src/top/tb_veer_el2_cosim.cc` adapts those DPI calls to the same
 The PicoRV32 VPI frontend now follows the same default logging policy. It writes
 its compare log to `dump/picorv32_cosim_result.log` and enables Spike commit
 logging at `dump/picorv32_spike_commit.log` by default.
+
+Across PicoRV32, Ibex, and VeeR EL2, cosim log-path selection now follows one
+policy keyed by `cpu_name`:
+
+```text
+1) COSIM_LOG_PATH / SPIKE_COMMIT_LOG_PATH
+2) target-specific env vars
+3) dump/<cpu_name>_cosim_result.log
+   dump/<cpu_name>_spike_commit.log
+```
 
 `build.sh` also exposes `PICORV32_COSIM_IF` as a mode selector (`vpi|dpi`) for
 bridge-interface experiments. In the current repository flow, PicoRV32 runtime

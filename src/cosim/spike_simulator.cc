@@ -235,6 +235,17 @@ SpikeSimulator::SpikeSimulator()
 
 SpikeSimulator::~SpikeSimulator() = default;
 
+SimulatorCapabilities SpikeSimulator::capabilities() const
+{
+    return SimulatorCapabilities{
+        .instruction_fetch = true,
+        .csr_access = true,
+        .interrupt_sync = true,
+        .debug_req = true,
+        .finish_detection = true
+    };
+}
+
 void SpikeSimulator::init(const CosimConfig& config)
 {
     impl_->cpu_.reset();
