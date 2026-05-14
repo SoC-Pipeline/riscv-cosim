@@ -389,6 +389,13 @@ module axi4_memory #(
 
 	output reg        tests_passed
 );
+	localparam [31:0] SIM_MMIO_ADDR = 32'h1000_0000;
+	localparam [7:0] RISCV_QUIT = 8'h00;
+	localparam [7:0] RISCV_START = 8'h80;
+	localparam [7:0] RISCV_FINISH = 8'h81;
+	localparam [7:0] RISCV_FAIL = 8'h82;
+	localparam [7:0] RISCV_PASS = 8'h83;
+
 	reg [31:0]   memory [0:MEM_SIZE/4-1] /* verilator public */;
 
 	reg verbose;
@@ -494,19 +501,39 @@ module axi4_memory #(
 			if (latched_wstrb[2]) memory[latched_wmem_addr >> 2][23:16] <= latched_wdata[23:16];
 			if (latched_wstrb[3]) memory[latched_wmem_addr >> 2][31:24] <= latched_wdata[31:24];
 		end
-		else if (latched_waddr == 32'h1000_0000) begin
-			if (verbose) begin
-				if (32 <= latched_wdata && latched_wdata < 128)
-					$display("[%.1f ns] OUT: '%c'  (ADDR=%08x)", $time, latched_wdata[7:0], latched_waddr);
-				else
-					$display("[%.1f ns]   OUT: %3d    (ADDR=%08x)", $time, latched_wdata, latched_waddr);
+		else if (latched_waddr == SIM_MMIO_ADDR) begin
+			case (latched_wdata[7:0])
+			RISCV_START:
+				$display("Firmware requested test start.");
+			RISCV_PASS: begin
+				tests_passed = 1;
+				$display("PASS");
 			end
-			else begin
-				$write("%c", latched_wdata[7:0]);
+			RISCV_FAIL: begin
+				$display("FAIL");
+				$finish;
+			end
+			RISCV_FINISH: begin
+				tests_passed = 1;
+				$display("Firmware requested test finish.");
+			end
+			RISCV_QUIT:
+				;
+			default: begin
+				if (verbose) begin
+					if (32 <= latched_wdata && latched_wdata < 128)
+						$display("[%.1f ns] OUT: '%c'  (ADDR=%08x)", $time, latched_wdata[7:0], latched_waddr);
+					else
+						$display("[%.1f ns]   OUT: %3d    (ADDR=%08x)", $time, latched_wdata, latched_waddr);
+				end
+				else begin
+					$write("%c", latched_wdata[7:0]);
 `ifndef VERILATOR
-				$fflush();
+					$fflush();
 `endif
+				end
 			end
+			endcase
 		end
 		else if (latched_waddr == 32'h2000_0000) begin
 			if (latched_wdata == 123456789) begin

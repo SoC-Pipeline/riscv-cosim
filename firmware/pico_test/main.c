@@ -1,10 +1,25 @@
 #include "print.h"
+#include "sim.h"
 
-int main(void) {
+static void finish_case(int pass) __attribute__((noreturn));
 
-	int a = 0xDEAD;
-	int b = 0xBEAD;
-	int c = a+b;
+static void finish_case(int pass)
+{
+	if (pass)
+		sim_pass();
+	else
+		sim_fail();
+
+	while (1) {
+		__asm__ volatile ("");
+	}
+}
+
+int main(void)
+{
+	volatile unsigned int a = 0xDEADu;
+	volatile unsigned int b = 0xBEADu;
+	unsigned int c = a + b;
 
 	print_str("a=");
 	print_hex(a, 8);
@@ -17,7 +32,6 @@ int main(void) {
 	print_chr('\n');
 
 	print_chr('\n');
-	print_str("PASS\n");
 
-	return 0;
+	finish_case(a == 0xDEADu && b == 0xBEADu && c == 0x19D5Au);
 }

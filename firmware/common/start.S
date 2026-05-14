@@ -8,10 +8,9 @@ _start:
 	lui sp, %hi(_stack_top)
 	addi sp, sp, %lo(_stack_top)
 
+	jal ra, sim_start
 	jal ra, main
 
-	li a0, 0x20000000
-	li a1, 123456789
-	sw a1, 0(a0)
+	j sim_exit
 
 1:	j 1b

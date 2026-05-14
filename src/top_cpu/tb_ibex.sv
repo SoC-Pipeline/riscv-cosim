@@ -363,8 +363,15 @@ module tb_ibex_uart (
   output logic        rvalid_o,
   output logic [31:0] rdata_o
 );
+  localparam logic [7:0] RISCV_QUIT = 8'h00;
+  localparam logic [7:0] RISCV_START = 8'h80;
+  localparam logic [7:0] RISCV_FINISH = 8'h81;
+  localparam logic [7:0] RISCV_FAIL = 8'h82;
+  localparam logic [7:0] RISCV_PASS = 8'h83;
+
   int log_fd;
   string log_path;
+  logic [2:0] sim_finish;
 
   initial begin
     log_fd = 0;
@@ -375,17 +382,45 @@ module tb_ibex_uart (
   always @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       rvalid_o <= 1'b0;
+      sim_finish <= '0;
     end else begin
       rvalid_o <= req_i;
-      if (req_i && we_i && be_i[0]) begin
-        $write("%c", wdata_i[7:0]);
-        if (log_fd == 0) begin
-          log_fd = $fopen(log_path, "w");
-          if (log_fd == 0) begin
-            $fatal(1, "failed to open %s", log_path);
+      if (req_i && we_i && be_i[0] && sim_finish == '0) begin
+        case (wdata_i[7:0])
+          RISCV_START:
+            $display("Firmware requested test start.");
+          RISCV_PASS: begin
+            $display("PASS");
+            sim_finish <= 3'b001;
           end
-        end
-        $fwrite(log_fd, "%c", wdata_i[7:0]);
+          RISCV_FAIL: begin
+            $display("FAIL");
+            $fatal(1, "firmware reported failure");
+          end
+          RISCV_FINISH: begin
+            $display("Firmware requested test finish.");
+            sim_finish <= 3'b001;
+          end
+          RISCV_QUIT:
+            ;
+          default: begin
+            $write("%c", wdata_i[7:0]);
+            if (log_fd == 0) begin
+              log_fd = $fopen(log_path, "w");
+              if (log_fd == 0) begin
+                $fatal(1, "failed to open %s", log_path);
+              end
+            end
+            $fwrite(log_fd, "%c", wdata_i[7:0]);
+          end
+        endcase
+      end
+
+      if (sim_finish != '0) begin
+        sim_finish <= sim_finish + 1'b1;
+      end
+      if (sim_finish >= 3'b010) begin
+        $finish;
       end
     end
   end

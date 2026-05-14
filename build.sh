@@ -36,6 +36,7 @@ set_default SRC_BUILD_DIR "$BUILD_DIR/src"
 set_default TOP_BUILD_DIR "$SRC_BUILD_DIR/top_cpu"
 set_default COSIM_BUILD_DIR "$SRC_BUILD_DIR/cosim"
 set_default IBEX_BUILD_ROOT "$TOP_BUILD_DIR/ibex"
+set_default IBEX_BUILD_STAMP "$IBEX_BUILD_ROOT/build.stamp"
 set_default VEER_EL2_BUILD_ROOT "$TOP_BUILD_DIR/veer_el2"
 set_default VEER_EL2_CONFIG_DIR "$VEER_EL2_BUILD_ROOT/snapshots/default"
 set_default VEER_EL2_FLIST "$VEER_EL2_BUILD_ROOT/flist"
@@ -342,11 +343,28 @@ require_ibex_reset_vector() {
 }
 
 require_firmware_tools() {
+	require_command make
 	require_command "${TOOLCHAIN_PREFIX}gcc"
 	require_command "${TOOLCHAIN_PREFIX}objdump"
 	require_command "${TOOLCHAIN_PREFIX}objcopy"
 	require_command "$PYTHON"
 	require_file "$SCRIPTS_DIR/makehex.py"
+}
+
+find_elf2hex() {
+	local candidates=(
+		"${TOOLCHAIN_PREFIX}elf2hex"
+		riscv64-unknown-elf-elf2hex
+		elf2hex
+	)
+	local c
+	for c in "${candidates[@]}"; do
+		if command -v "$c" >/dev/null 2>&1; then
+			printf '%s\n' "$c"
+			return 0
+		fi
+	done
+	return 1
 }
 
 require_firmware_case() {
@@ -355,7 +373,9 @@ require_firmware_case() {
 	src_dir="$(case_dir "$case_name")"
 	require_file "$FIRMWARE_COMMON_DIR/start.S"
 	require_file "$FIRMWARE_COMMON_DIR/sections.lds"
+	require_file "$FIRMWARE_COMMON_DIR/firmware.mk"
 	require_dir "$src_dir"
+	require_file "$src_dir/Makefile"
 	require_file "$src_dir/main.c"
 }
 
@@ -416,7 +436,24 @@ firmware() {
 	require_firmware_case "$case_name"
 	mkdir -p "$obj_dir"
 
-	firmware_generic "$src_dir" "$obj_dir"
+	local -a make_args=(
+		-C "$src_dir"
+		install
+		"COMMON_DIR=$FIRMWARE_COMMON_DIR"
+		"SCRIPTS_DIR=$SCRIPTS_DIR"
+		"INSTALL_DIR=$obj_dir"
+		"TOOLCHAIN_PREFIX=$TOOLCHAIN_PREFIX"
+		"PYTHON=$PYTHON"
+		"ARCH=rv32imc"
+		"ABI=ilp32"
+	)
+
+	local elf2hex_bin
+	if elf2hex_bin="$(find_elf2hex)"; then
+		make_args+=("ELF2HEX=$elf2hex_bin")
+	fi
+
+	make "${make_args[@]}"
 }
 
 firmware_generic() {
@@ -465,7 +502,13 @@ firmware_generic() {
 	"${TOOLCHAIN_PREFIX}objdump" -D "$obj_dir/firmware.elf" > "$obj_dir/firmware.lst"
 	"${TOOLCHAIN_PREFIX}objcopy" -O binary "$obj_dir/firmware.elf" "$obj_dir/firmware.bin"
 	"${TOOLCHAIN_PREFIX}objcopy" -O verilog "$obj_dir/firmware.elf" "$obj_dir/firmware_veer.hex"
-	"$PYTHON" "$SCRIPTS_DIR/makehex.py" "$obj_dir/firmware.bin" 32768 > "$obj_dir/firmware.hex"
+
+	local elf2hex_bin
+	if elf2hex_bin="$(find_elf2hex)"; then
+		"$elf2hex_bin" --bit-width 32 --input "$obj_dir/firmware.elf" --output "$obj_dir/firmware.hex"
+	else
+		"$PYTHON" "$SCRIPTS_DIR/makehex.py" "$obj_dir/firmware.bin" 32768 > "$obj_dir/firmware.hex"
+	fi
 }
 
 spike_ready() {
@@ -537,10 +580,31 @@ picorv32_top_stamp() {
 	printf 'RESET_VECTOR=%s\nPICORV32_COSIM_IF=%s\n' \
 		"$(printf '0x%08x' "$(parse_uint32 "$RESET_VECTOR")")" \
 		"${PICORV32_COSIM_IF,,}"
+	cksum \
+		"$SRC_TOP_DIR/tb_picorv32.v" \
+		"$PICORV32_RTL"
 }
 
 ibex_top_ready() {
-	[[ -x "$(ibex_sim_exe)" ]]
+	local expected
+	expected="$(ibex_build_stamp)"
+	[[ -x "$(ibex_sim_exe)" && -f "$IBEX_BUILD_STAMP" ]] &&
+		[[ "$(cat "$IBEX_BUILD_STAMP")" == "$expected" ]]
+}
+
+ibex_build_stamp() {
+	printf 'RESET_VECTOR=%s\nIBEX_BOOT_ADDR=%s\nIBEX_RAM_BASE=%s\n' \
+		"$(printf '0x%08x' "$(parse_uint32 "$RESET_VECTOR")")" \
+		"$(printf '0x%08x' "$(parse_uint32 "$IBEX_BOOT_ADDR")")" \
+		"$IBEX_RAM_BASE"
+	cksum \
+		"$SRC_TOP_DIR/tb_ibex.sv" \
+		"$SRC_TOP_DIR/tb_ibex_cosim.cc" \
+		"$SRC_TOP_DIR/tb_ibex_cosim.core" \
+		"$SRC_TOP_DIR/tb_ibex_cosim_bind.sv" \
+		"$COSIM_SRC_DIR/cosim_session.cc" \
+		"$COSIM_SRC_DIR/elf_utils.cc" \
+		"$COSIM_SRC_DIR/spike_simulator.cc"
 }
 
 veer_el2_top_ready() {
@@ -812,6 +876,7 @@ build_ibex_cosim() {
 			--RamBaseAddr="$IBEX_RAM_BASE" \
 			--BootAddr="$(parse_uint32 "$IBEX_BOOT_ADDR")"
 	)
+	ibex_build_stamp > "$IBEX_BUILD_STAMP"
 }
 
 sim_ibex() {
@@ -1093,8 +1158,11 @@ build_soc_top() {
 		picorv32|all)
 			ensure_spike_deps
 			local soc_build_dir="$TOP_BUILD_DIR/soc"
-			local sim_exe="$soc_build_dir/tb_picosoc_soc_spike"
+			local sim_exe="$soc_build_dir/obj_dir/Vtb_picosoc_soc"
 			mkdir -p "$soc_build_dir"
+			require_command verilator
+			require_command "$PKG_CONFIG"
+			require_file "$PICORV32_RTL"
 
 			local spike_pc_cflags spike_pc_libs
 			spike_pc_cflags="$(
@@ -1108,15 +1176,20 @@ build_soc_top() {
 
 			verilator --cc --exe --build \
 				-Mdir "$soc_build_dir/obj_dir" \
-				--top-module picosoc_soc_bus \
+				--top-module tb_picosoc_soc \
+				--timing \
+				-Wno-fatal \
 				-I"$SRC_DIR/top_soc" \
-				-CFLAGS "-std=c++20 -include sys/syscall.h $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
+				-CFLAGS "-std=c++20 -I$COSIM_SRC_DIR -include sys/syscall.h $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
 				-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
-				"$SRC_DIR/top_soc/picosoc_soc.sv" \
-				"$SRC_DIR/top_soc/picosoc_soc_bus.sv" \
-				"$SRC_DIR/top_soc/tb_picosoc_soc_spike.cc"
-
-			cp "$soc_build_dir/obj_dir/Vpicosoc_soc_bus" "$sim_exe"
+				"$SRC_DIR/top_soc/tb_picosoc_soc.sv" \
+				"$SRC_DIR/top_soc/picosoc.v" \
+				"$SRC_DIR/top_soc/spike_bus_master.sv" \
+				"$TB_HOME/external/picorv32/picosoc/simpleuart.v" \
+				"$TB_HOME/external/picorv32/picosoc/spimemio.v" \
+				"$SRC_DIR/top_soc/spike_bus_dpi.cc" \
+				"$COSIM_SRC_DIR/elf_utils.cc" \
+				"$SRC_DIR/top_soc/sim_main.cc"
 			;;
 		*)
 			printf 'error: unknown soc build target: %s\n\n' "$target" >&2
@@ -1241,11 +1314,7 @@ detect_cosim_status() {
 detect_case_pass_status() {
 	local case_name="$1"
 	local run_log="$2"
-	if rg -q "(^|[^A-Z])PASS([^A-Z]|$)" "$run_log"; then
-		printf '%s\n' "PASS"
-		return 0
-	fi
-	if rg -q "OUT:[[:space:]]+123456789" "$run_log"; then
+	if rg -q "^[[:space:]]*PASS[[:space:]]*$" "$run_log"; then
 		printf '%s\n' "PASS"
 		return 0
 	fi
@@ -1314,7 +1383,18 @@ run_command_cpu() {
 	fi
 }
 
+clean_firmware_case_builds() {
+	local case_name src_dir
+	while IFS= read -r case_name; do
+		src_dir="$(case_dir "$case_name")"
+		if [[ -d "$src_dir" ]]; then
+			safe_remove_tree_if_exists "$src_dir/build"
+		fi
+	done < <(case_list all)
+}
+
 clean() {
+	clean_firmware_case_builds
 	remove_paths \
 		"$FIRMWARE_BUILD_DIR" \
 		"$SRC_BUILD_DIR" \
@@ -1326,6 +1406,7 @@ clean() {
 }
 
 clean_all() {
+	clean_firmware_case_builds
 	remove_paths \
 		"$BUILD_DIR" \
 		"$DUMP_DIR" \
@@ -1337,15 +1418,15 @@ clean_all() {
 
 run_soc_spike() {
 	local soc_build_dir="$TOP_BUILD_DIR/soc"
-	local sim_exe="$soc_build_dir/tb_picosoc_soc_spike"
+	local sim_exe="$soc_build_dir/obj_dir/Vtb_picosoc_soc"
 	if [[ ! -x "$sim_exe" ]]; then
 		build_soc_top picorv32
 	fi
 	local selector="${1:-$TEST_NAME}"
-	local case_name elf_path run_log result pass_count=0 fail_count=0
+	local case_name elf_path run_log result pass_status sim_exit pass_count=0 fail_count=0
 	printf '\n'
-	printf '%-12s %-8s %s\n' "case" "result" "run_log"
-	printf '%-12s %-8s %s\n' "----" "------" "-------"
+	printf '%-12s %-8s %-12s %-8s %s\n' "case" "exit" "pass_marker" "result" "run_log"
+	printf '%-12s %-8s %-12s %-8s %s\n' "----" "----" "-----------" "------" "-------"
 	while IFS= read -r case_name; do
 		ensure_firmware_case "$case_name"
 		elf_path="$(case_elf_path "$case_name")"
@@ -1359,14 +1440,20 @@ run_soc_spike() {
 			MY_ISA="$MY_ISA" \
 			SOC_SPIKE_COMMIT_LOG="${SOC_SPIKE_COMMIT_LOG:-$commit_log}" \
 			SOC_SPIKE_VERBOSE="${SOC_SPIKE_VERBOSE:-0}" \
-			"$sim_exe" 2>&1 | tee "$run_log"; then
+			"$sim_exe" "+firmware=$(case_hex_path "$case_name")" 2>&1 | tee "$run_log"; then
+			sim_exit=0
+		else
+			sim_exit=$?
+		fi
+		pass_status="$(detect_case_pass_status "$case_name" "$run_log")"
+		if [[ "$sim_exit" -eq 0 && "$pass_status" == "PASS" ]]; then
 			result="PASS"
 			pass_count=$((pass_count + 1))
 		else
 			result="FAIL"
 			fail_count=$((fail_count + 1))
 		fi
-		printf '%-12s %-8s %s\n' "$case_name" "$result" "$run_log"
+		printf '%-12s %-8s %-12s %-8s %s\n' "$case_name" "$sim_exit" "$pass_status" "$result" "$run_log"
 	done < <(case_list "$selector")
 	printf '\n[SOC-SPIKE] summary: pass=%d fail=%d\n' "$pass_count" "$fail_count"
 	if ((fail_count > 0)); then

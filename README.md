@@ -4,6 +4,11 @@ This repository builds firmware and runs RISC-V co-simulation flows for:
 - CPU retire-compare mode: `picorv32`, `ibex`, `veer_el2`
 - SoC bus-driven mode (CPU-less shell): `soc/picorv32`
 
+## require
+
+1. [riscv-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
+1. [elf2hex](https://github.com/sifive/elf2hex)
+
 ## Repository Overview
 
 ```text
@@ -28,13 +33,13 @@ This repository builds firmware and runs RISC-V co-simulation flows for:
           v                                        v
 +---------+----------------------+    +------------+-------------+
 | src/top_cpu + src/cosim        |    | src/top_soc               |
-| retire events <-> CosimSession |    | ELF preload -> RAM bus RW |
+| retire events <-> CosimSession |    | HEX preload -> SoC RAM bus|
 +---------+----------------------+    +------------+-------------+
           |                                        |
           +-------------------+--------------------+
                               v
                     +---------+---------+
-                    |      log/ dump/   |
+                    |        log/       |
                     | run logs + commits|
                     +-------------------+
 ```
@@ -108,7 +113,6 @@ build/src/top_cpu/ibex/
 build/src/top_cpu/veer_el2/
 build/src/top_cpu/soc/
 log/
-dump/
 ```
 
 `./build.sh clean` keeps spike/pk build caches.
@@ -117,3 +121,8 @@ dump/
 ## More Details
 
 See `docs/arch.md` for architecture and layer-level design details.
+
+## reference
+
+1. [Co-simulation System](https://ibex-core.readthedocs.io/en/latest/03_reference/cosim.html)
+1. [spike-cosim](https://github.com/farukyld/spike-cosim)

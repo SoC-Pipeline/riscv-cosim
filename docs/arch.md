@@ -3,13 +3,14 @@
 ## Directory Roles
 
 ```text
-src/top_cpu/       Project Verilog/SystemVerilog testbench entry points
+src/top_cpu/   CPU-mode Verilog/SystemVerilog testbench entry points
+src/top_soc/   SoC-mode sources
 src/cosim/     C++ bridge frontend, simulator interface, and Spike backend
 firmware/      Firmware test inputs, startup code, and linker scripts
 scripts/       Python utilities used by firmware and log processing flows
 external/      External dependencies such as PicoRV32, Ibex, Spike, and pk
 build/         Generated firmware, dependency, simulation, and VPI artifacts
-dump/          Generated simulation logs
+log/           Generated run logs, compare logs, and Spike commit logs
 ```
 
 `src/` contains project-owned source code. Python helper programs stay in
@@ -25,8 +26,9 @@ The primary regression entry point is:
 ```
 
 It ensures missing artifacts are built, then runs every active firmware case on
-all supported simulation targets (`picorv32`, `ibex`, `veer_el2`). The build script separates dependency,
-firmware, top, and execution layers:
+all CPU-mode targets (`picorv32`, `ibex`, `veer_el2`) and the active SoC-mode
+target (`soc/picorv32`). The build script separates dependency, firmware, top,
+and execution layers:
 
 ```text
 ./build.sh build spike
@@ -44,7 +46,7 @@ firmware, top, and execution layers:
   -> build build/src/top_cpu/veer_el2/obj_dir/Vtb_top
 
 ./build.sh build soc [picorv32|all]
-  -> build build/src/top_cpu/soc/tb_picosoc_soc_spike
+  -> build build/src/top_cpu/soc/obj_dir/Vtb_picosoc_soc
 
 ./build.sh run cpu [picorv32|ibex|veer_el2|all] [case|all]
   -> ensure required firmware and top artifacts
@@ -97,10 +99,10 @@ veer_el2 top
   -> feed VeeR retire trace PC/instruction events into CosimSession
 ```
 
-## SoC Mode (PicoRV32 Shell)
+## SoC Mode (PicoSoC CPU Slot Replacement)
 
 The repository also includes a bus-driven SoC validation mode where the
-simulator acts as the bus master and drives a shell SoC directly:
+simulator replaces the CPU slot inside a project-owned PicoSoC copy:
 
 ```bash
 ./build.sh run soc [picorv32|all] [hello|pico_test|mem|all]
@@ -113,48 +115,56 @@ This mode is intentionally different from retire-compare CPU cosim:
 
 ### SoC Structure
 
-`src/top_soc/picosoc_soc.sv` models a minimal SoC interconnect and devices.
+`src/top_soc/picosoc.v` is a minimal migrated copy of upstream PicoSoC. It keeps
+the upstream RAM, SPI flash interface, UART registers, and external IO path, but
+replaces the original PicoRV32 CPU instance with `spike_bus_master`.
 
 Bus roles:
-- Master: Spike (through `tb_picosoc_soc_spike.cc` and `simif_t` MMIO hooks)
+- Master: Spike through `spike_bus_master.sv` and `spike_bus_dpi.cc`
 - Slaves:
-  - RAM device (`picosoc_soc_mem`)
-  - UART MMIO output
-  - simulation-finish MMIO register
+  - PicoSoC RAM (`picosoc_mem`)
+  - PicoSoC UART/SPI registers
+  - TB-handled simulation output and status MMIO
 
-Address map used by this shell:
+Address map used by this mode:
 - `0x80000000` region: RAM
-- `0x10000000`: UART TX byte output
-- `0x20000000`: finish register (`123456789` marks PASS/finish)
+- `0x02000000` region: PicoSoC SPI/UART registers
+- `0x10000000`: shared firmware/TB simulation MMIO
 
-### ELF Load Path In SoC Mode
+The shared simulation MMIO address is project-owned and is decoded explicitly
+before the PicoSoC SPI flash path. Firmware writes byte-sized protocol values
+and printable characters to `0x10000000`; the SoC TB observes those writes on
+`iomem_valid/iomem_wstrb/iomem_addr/iomem_wdata`.
 
-SoC mode does not depend on PicoRV32 `firmware.hex` preload.
-It uses:
+### Firmware Load Path In SoC Mode
+
+SoC mode uses the PicoSoC-style HEX preload path:
 
 ```text
 firmware.elf
-  -> parse ELF PT_LOAD segments
-  -> write segment bytes into SoC RAM through bus writes
+  -> build/firmware/<case>/obj/firmware.hex
+  -> TB $readmemh into uut.memory.mem
+  -> reset release
   -> set Spike PC to ELF entry
-  -> execute and access SoC via bus reads/writes
+  -> Spike fetch/load/store requests cross the PicoSoC bus
 ```
 
-The loader is implemented in `src/top_soc/tb_picosoc_soc_spike.cc`
-(`preload_elf`), and writes RAM by calling the same bus transaction path used
-during execution.
+The TB is the only firmware image loader. `spike_bus_dpi.cc` does not parse or
+preload HEX/ELF contents into private RAM. Its `simif_t` implementation returns
+`nullptr` from `addr_to_mem()`, forcing Spike fetches, loads, and stores through
+the DPI bus bridge.
 
 ### Evidence That Execution Uses SoC RAM
 
 `run soc ...` now prints bus access counters at runtime:
 
 ```text
-[SOC-BUS] rd_total=<N> rd_ram=<N> wr_total=<N> wr_ram=<N>
+[SOC] ram_reads=<N> ram_writes=<N>
 ```
 
-`rd_ram > 0` is required; if no RAM reads are observed in the RAM address
-window, the run fails. This guards against false pass where execution would
-accidentally use only internal simulator memory.
+These counters are collected from `uut.mem_valid && uut.mem_ready && uut.ram_sel`
+inside `tb_picosoc_soc.sv`, so they confirm that Spike executed through the
+PicoSoC RAM path rather than through private simulator memory.
 
 ### SoC Logs
 
@@ -205,7 +215,7 @@ PicoRV32 runtime path uses the VPI wrapper, which handles task registration,
 plusargs, VPI argument conversion, and result writes back to Verilog.
 
 `src/cosim/cosim_session.cc` owns one reference simulator backend, compare
-counters, retire-event comparison, and `dump/cosim_result.log` generation.
+counters, retire-event comparison, and log generation.
 Design-owned testbenches interact with it through:
 
 ```text
@@ -262,12 +272,12 @@ reports `trace_rv_i_valid_ip`, `trace_rv_i_address_ip`, and
 `trace_rv_i_insn_ip`, and finishes cosim when firmware writes the shared finish
 value. `src/top_cpu/tb_veer_el2_cosim.cc` adapts those DPI calls to the same
 `CosimSession` used by PicoRV32. VeeR cosim writes its compare log to
-`dump/veer_el2_cosim_result.log` by default and enables Spike commit logging at
-`dump/veer_el2_spike_commit.log`, matching the Ibex cosim debug flow.
+`log/veer_el2_cosim_result.log` by default and enables Spike commit logging at
+`log/veer_el2_spike_commit.log`, matching the Ibex cosim debug flow.
 
 The PicoRV32 VPI frontend now follows the same default logging policy. It writes
-its compare log to `dump/picorv32_cosim_result.log` and enables Spike commit
-logging at `dump/picorv32_spike_commit.log` by default.
+its compare log to `log/picorv32_cosim_result.log` and enables Spike commit
+logging at `log/picorv32_spike_commit.log` by default.
 
 Across PicoRV32, Ibex, and VeeR EL2, cosim log-path selection now follows one
 policy keyed by `cpu_name`:
@@ -275,8 +285,8 @@ policy keyed by `cpu_name`:
 ```text
 1) COSIM_LOG_PATH / SPIKE_COMMIT_LOG_PATH
 2) target-specific env vars
-3) dump/<cpu_name>_cosim_result.log
-   dump/<cpu_name>_spike_commit.log
+3) log/<cpu_name>_cosim_result.log
+   log/<cpu_name>_spike_commit.log
 ```
 
 `build.sh` also exposes `PICORV32_COSIM_IF` as a mode selector (`vpi|dpi`) for
@@ -326,23 +336,35 @@ hello pico_test mem
 Shared firmware runtime code lives under `firmware/common`:
 
 ```text
+firmware.mk
 start.S
 sections.lds
 print.c
 print.h
+sim.c
+sim.h
+sim_show.h
 ```
 
-Case directories contain only case-specific program code:
+Case directories contain case-specific program code and a small Makefile that
+includes `firmware/common/firmware.mk`:
 
 ```text
+firmware/hello/Makefile
 firmware/hello/main.c
+firmware/pico_test/Makefile
 firmware/pico_test/main.c
+firmware/mem/Makefile
 firmware/mem/main.c
 ```
 
-`build.sh build firmware` compiles common sources plus the selected case sources into
-`build/firmware/<TEST_NAME>/obj`. `arith_basic_test` is no longer an active
-firmware case.
+Running `make -C firmware/<case> firmware` creates local artifacts under that
+case directory's `build/`. Running `make -C firmware/<case> install` publishes
+the same ELF/HEX outputs to `build/firmware/<case>/obj`. `build.sh build
+firmware` uses that install flow so existing CPU and SoC run commands keep the
+same artifact paths. Each active case is self-checking and reports completion
+through `sim_pass()` or `sim_fail()` at the shared firmware MMIO address.
+`arith_basic_test` is no longer an active firmware case.
 
 ## Runtime Inputs
 
@@ -355,10 +377,36 @@ The shared firmware reset vector is `RESET_VECTOR`, defaulting to
 Ibex derives `BootAddr` from the same value because the core computes its
 post-reset PC as `{boot_addr_i[31:8], 8'h80}`.
 
-Firmware prints characters by writing byte values to `0x10000000`. PicoRV32 and
-Ibex both decode that address as simulation output. VeeR EL2 decodes the same
-addresses in its project monitor. Firmware requests normal simulation
-termination by writing `123456789` to `0x20000000`.
+### Firmware/TB Status Protocol
+
+Firmware communicates with CPU and SoC testbenches by writing to the shared
+simulation MMIO address:
+
+```text
+SIM_MMIO_ADDR = 0x10000000
+```
+
+The protocol values are defined in `firmware/common/sim.h`:
+
+```text
+0x80 RISCV_START   firmware started
+0x81 RISCV_FINISH  normal finish marker
+0x82 RISCV_FAIL    self-check failed
+0x83 RISCV_PASS    self-check passed
+0x00 RISCV_QUIT    stop request after PASS/FAIL/FINISH
+```
+
+Printable byte values written to the same address are treated as console output.
+`sim_pass()`, `sim_fail()`, and `sim_finish()` write the status marker first,
+execute an I/O fence, then write `RISCV_QUIT`. The fence keeps strongly ordered
+status delivery visible to CPU and SoC monitors that observe external bus writes.
+
+In SoC mode, `picosoc.v` routes `0x10000000` to `iomem_*` instead of SPI flash
+or RAM. `tb_picosoc_soc.sv` records PASS/FAIL/FINISH when the write handshake is
+seen, but it delays `spike_bus_finish()`/`$finish` until after the bus response
+has been returned to Spike. This prevents a valid PASS/FAIL store from being
+reported as a failed in-flight bus request. Timeout and Spike bus errors call
+the same finish path with a non-zero exit code and are reported as FAIL.
 
 `env.sh` has been removed. Override build settings with shell environment
 variables before invoking `build.sh`; the script resolves and exports defaults
@@ -369,8 +417,8 @@ internally for subcommands.
 - `PICORV32_COSIM_IF=dpi` fails immediately:
   This is expected on the current Icarus flow. Use `PICORV32_COSIM_IF=vpi`.
 - Cosim lifecycle mismatch (`init/retire/finish`) symptoms:
-  Check wrapper mode, then confirm `dump/*_cosim_result.log` and
-  `dump/*_spike_commit.log` are being generated for the active target.
+  Check wrapper mode, then confirm `log/*_cosim_result.log` and
+  `log/*_spike_commit.log` are being generated for the active target.
 
 ## External Dependencies
 
@@ -406,7 +454,7 @@ DTB, and Verilator output under `build/src/top_cpu/veer_el2`.
 ## Clean Behavior
 
 `./build.sh clean` is a development clean. It removes generated firmware, top,
-cosim, cache, dump, and log outputs but preserves:
+cosim, cache, and log outputs but preserves:
 
 ```text
 build/spike
@@ -416,4 +464,4 @@ build/pk-build
 ```
 
 `./build.sh clean-all` removes the whole `build/` directory plus generated
-`dump/` and `log/` outputs.
+`log/` outputs.

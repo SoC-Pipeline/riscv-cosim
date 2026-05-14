@@ -1,18 +1,16 @@
 # TODO
 
-1. cosim的的形态探索
-1. 现在cosim支持cpu的指令对比，还有一种soc模式，spike直接接管soc中的cpu
+1. cosim的的插入式形态实现
 
 ## 需求
 
-1. 探索soc模式，以picorv32 soc为例子
+1. soc模式将spike/simulator插入替代cpu，以picorv32 soc为例子
 1. external/picorv32/picosoc/icebreaker_tb.v 是相关tb
-1. 探索使用spike接管 external/picorv32/picosoc/picosoc.v 中的 picorv32
-1. 代码后续规划放到 src/top_soc
+1. 使用spike接管 external/picorv32/picosoc/picosoc.v 中的 picorv32/cpu
 
 ## 测试 
 
-1. picorv32: ./build.sh run picorv32 hello
+1. picorv32: ./build.sh run soc picorv32 mem
 1. ./build.sh run all all
 
 ## tools
