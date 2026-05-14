@@ -1,5 +1,6 @@
 #include "cosim_bridge.h"
 #include "cosim_config_policy.h"
+#include "cosim_top_utils.h"
 
 #include "Vtb_top.h"
 #include "verilated.h"
@@ -15,24 +16,6 @@ namespace {
 
 vluint64_t main_time = 0;
 
-uint64_t env_u64(const char *name, uint64_t default_value) {
-    const char *value = std::getenv(name);
-    if (value == nullptr || value[0] == '\0') {
-        return default_value;
-    }
-    return std::stoull(value, nullptr, 0);
-}
-
-bool env_enabled(const char *name) {
-    const char *value = std::getenv(name);
-    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
-}
-
-std::string env_string(const char *name, const char *default_value) {
-    const char *value = std::getenv(name);
-    return value == nullptr || value[0] == '\0' ? std::string(default_value) : std::string(value);
-}
-
 } // namespace
 
 double sc_time_stamp() {
@@ -44,11 +27,11 @@ extern "C" void veer_cosim_init(const char *elf_path) {
         cosim::CosimPolicyArgs{
             .cpu_name = "veer_el2",
             .elf_path = elf_path == nullptr ? "" : elf_path,
-            .isa = env_string("MY_ISA", "RV32IMC"),
-            .memory_base = env_u64("VEER_EL2_RAM_BASE", 0x80000000u),
-            .memory_size = env_u64("VEER_EL2_RAM_SIZE", 128 * 1024u),
+            .isa = top_env_string("MY_ISA", "RV32IMC"),
+            .memory_base = top_env_u64("VEER_EL2_RAM_BASE", 0x80000000u),
+            .memory_size = top_env_u64("VEER_EL2_RAM_SIZE", 128 * 1024u),
             .dtb_enabled = false,
-            .dtb_file = env_string("VEER_EL2_SPIKE_DTB", ""),
+            .dtb_file = top_env_string("VEER_EL2_SPIKE_DTB", ""),
             .sim_mmio_enabled = true
         },
         "VEER_EL2_COSIM_LOG", "VEER_EL2_SPIKE_COMMIT_LOG");
@@ -76,7 +59,7 @@ int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
 
     auto *tb = new Vtb_top;
-    const uint64_t max_cycles = env_u64("VEER_EL2_MAX_CYCLES", 2000000u);
+    const uint64_t max_cycles = top_env_u64("VEER_EL2_MAX_CYCLES", 2000000u);
     const uint64_t max_half_cycles = max_cycles * 2u + 32u;
     uint64_t half_cycles = 0;
     tb->mem_signature_begin = 0x00000000;
@@ -90,7 +73,7 @@ int main(int argc, char **argv) {
 
     VerilatedVcdC *tfp = nullptr;
 #if VM_TRACE
-    if (env_enabled("VEER_EL2_TRACE")) {
+    if (top_env_enabled("VEER_EL2_TRACE")) {
         Verilated::traceEverOn(true);
         tfp = new VerilatedVcdC;
         tb->trace(tfp, 24);

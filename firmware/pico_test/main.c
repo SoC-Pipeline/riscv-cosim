@@ -17,6 +17,7 @@ int main(void) {
 	print_chr('\n');
 
 	print_chr('\n');
+	print_str("PASS\n");
 
 	return 0;
 }

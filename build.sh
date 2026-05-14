@@ -44,8 +44,8 @@ set_default VEER_EL2_SIM_EXE "$VEER_EL2_OBJ_DIR/Vtb_top"
 set_default VEER_EL2_BUILD_STAMP "$VEER_EL2_BUILD_ROOT/build.stamp"
 set_default VEER_EL2_SPIKE_DTS "$VEER_EL2_BUILD_ROOT/spike_veer_el2.dts"
 set_default VEER_EL2_SPIKE_DTB "$VEER_EL2_BUILD_ROOT/spike_veer_el2.dtb"
-set_default DUMP_DIR "$TB_HOME/dump"
 set_default LOG_DIR "$TB_HOME/log"
+set_default DUMP_DIR "$LOG_DIR"
 set_default VPI_MODULE_DIR "$COSIM_BUILD_DIR"
 set_default SIM_VVP "$TOP_BUILD_DIR/tb_picorv32.vvp"
 set_default PICORV32_TOP_STAMP "$TOP_BUILD_DIR/picorv32_top.stamp"
@@ -70,11 +70,11 @@ set_default IBEX_PKG_CONFIG_PATH "$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+
 set_default IBEX_FUSESOC_CORE local:spike_cosim:tb_ibex_cosim
 set_default IBEX_BOOT_ADDR "$(( (RESET_VECTOR - 0x80) & 0xFFFFFFFF ))"
 set_default IBEX_RAM_BASE 2147483648
-set_default PICORV32_COSIM_LOG "$DUMP_DIR/picorv32_cosim_result.log"
-set_default PICORV32_SPIKE_COMMIT_LOG "$DUMP_DIR/picorv32_spike_commit.log"
+set_default PICORV32_COSIM_LOG "$LOG_DIR/picorv32_cosim_result.log"
+set_default PICORV32_SPIKE_COMMIT_LOG "$LOG_DIR/picorv32_spike_commit.log"
 set_default PICORV32_COSIM_IF vpi
-set_default IBEX_COSIM_LOG "$DUMP_DIR/ibex_cosim_result.log"
-set_default IBEX_SPIKE_COMMIT_LOG "$DUMP_DIR/ibex_spike_commit.log"
+set_default IBEX_COSIM_LOG "$LOG_DIR/ibex_cosim_result.log"
+set_default IBEX_SPIKE_COMMIT_LOG "$LOG_DIR/ibex_spike_commit.log"
 set_default IBEX_TRACE_FILE_BASE "$LOG_DIR/trace_core"
 set_default IBEX_SIMPLE_SYSTEM_LOG "$LOG_DIR/ibex_simple_system.log"
 set_default IBEX_PCOUNT_CSV "$LOG_DIR/tb_ibex_pcount.csv"
@@ -82,8 +82,8 @@ set_default IBEX_VERILATOR_VERSION 5.010
 set_default VEER_EL2_RAM_BASE 0x80000000
 set_default VEER_EL2_RAM_SIZE 0x00020000
 set_default VEER_EL2_MAX_CYCLES 2000000
-set_default VEER_EL2_COSIM_LOG "$DUMP_DIR/veer_el2_cosim_result.log"
-set_default VEER_EL2_SPIKE_COMMIT_LOG "$DUMP_DIR/veer_el2_spike_commit.log"
+set_default VEER_EL2_COSIM_LOG "$LOG_DIR/veer_el2_cosim_result.log"
+set_default VEER_EL2_SPIKE_COMMIT_LOG "$LOG_DIR/veer_el2_spike_commit.log"
 set_default FIRMWARE_CASES "hello pico_test"
 
 set_default PYTHON python3
@@ -148,12 +148,12 @@ Examples:
 
 Clean:
   ./build.sh clean
-      Remove generated firmware, top, cosim, cache, dump, and log outputs.
+      Remove generated firmware, top, cosim, cache, and log outputs.
       Preserve slow dependency builds:
         build/spike, build/spike-build, build/pk, build/pk-build
 
   ./build.sh clean-all
-      Remove the full build directory plus dump and log outputs.
+      Remove the full build directory plus log outputs.
 
 Frequently used environment overrides:
   FIRMWARE_CASES      Active case list used by all/run all all.
@@ -166,11 +166,11 @@ Frequently used environment overrides:
                       Priority:
                         1) COSIM_LOG_PATH/SPIKE_COMMIT_LOG_PATH
                         2) target-specific vars below
-                        3) dump/<cpu_name>_cosim_result.log and
-                           dump/<cpu_name>_spike_commit.log
-  PICORV32_COSIM_LOG  PicoRV32 cosim compare log. Default: dump/picorv32_cosim_result.log
+                        3) log/<cpu_name>_cosim_result.log and
+                           log/<cpu_name>_spike_commit.log
+  PICORV32_COSIM_LOG  PicoRV32 cosim compare log. Default: log/picorv32_cosim_result.log
   PICORV32_SPIKE_COMMIT_LOG
-                      PicoRV32 Spike commit log. Default: dump/picorv32_spike_commit.log
+                      PicoRV32 Spike commit log. Default: log/picorv32_spike_commit.log
   BUILD_JOBS          Parallel jobs for Spike/pk/top builds. Default: 8
   SPIKE_SRC_DIR       Spike source. Default: external/ibex/external/riscv-isa-sim
   SPIKE_PREFIX        Spike install prefix. Default: build/spike
@@ -179,16 +179,16 @@ Frequently used environment overrides:
   IBEX_PKG_CONFIG_PATH
                       Ibex cosim pkg-config search path. Default: build/spike/lib/pkgconfig
   IBEX_SPIKE_COMMIT_LOG
-                      Ibex Spike commit log. Default: dump/ibex_spike_commit.log
-  IBEX_COSIM_LOG      Ibex cosim compare log. Default: dump/ibex_cosim_result.log
+                      Ibex Spike commit log. Default: log/ibex_spike_commit.log
+  IBEX_COSIM_LOG      Ibex cosim compare log. Default: log/ibex_cosim_result.log
   IBEX_VERILATOR_VERSION
                       Expected Ibex Verilator version. Default: 5.010
                       Set to "any" to skip the exact-version guard.
   VEER_EL2_DIR        VeeR EL2 source tree. Default: external/Cores-VeeR-EL2
   VEER_EL2_MAX_CYCLES VeeR EL2 timeout cycle count. Default: 2000000
-  VEER_EL2_COSIM_LOG  VeeR EL2 cosim compare log. Default: dump/veer_el2_cosim_result.log
+  VEER_EL2_COSIM_LOG  VeeR EL2 cosim compare log. Default: log/veer_el2_cosim_result.log
   VEER_EL2_SPIKE_COMMIT_LOG
-                      VeeR EL2 Spike commit log. Default: dump/veer_el2_spike_commit.log
+                      VeeR EL2 Spike commit log. Default: log/veer_el2_spike_commit.log
   VEER_EL2_SPIKE_DTB  Prebuilt DTB used by Spike for VeeR cosim.
                       Default: build/src/top/veer_el2/spike_veer_el2.dtb
 
@@ -652,7 +652,7 @@ vpi() {
 	read -r -a spike_lib_args <<< "$spike_pc_libs"
 
 	"$CXX" "${cosim_sources[@]}" -o "$VPI_MODULE_DIR/libspike.so" \
-		-fPIC -shared -std=c++20 \
+		-fPIC -shared -std=c++20 -include sys/syscall.h \
 		"${include_args[@]}" \
 		-L"$SPIKE_LIB_DIR" \
 		-Wl,--start-group "${spike_lib_args[@]}" -Wl,--end-group \
@@ -662,7 +662,7 @@ vpi() {
 	cp "$VPI_MODULE_DIR/libspike.so" "$VPI_MODULE_DIR/libspike.vpi"
 
 	"$CXX" "${cosim_sources[@]}" -o "$VPI_MODULE_DIR/libspike_dpi.so" \
-		-fPIC -shared -std=c++20 \
+		-fPIC -shared -std=c++20 -include sys/syscall.h \
 		"${include_args[@]}" \
 		-L"$SPIKE_LIB_DIR" \
 		-Wl,--start-group "${spike_lib_args[@]}" -Wl,--end-group \
@@ -730,6 +730,7 @@ build_picorv32_top() {
 }
 
 ensure_picorv32_top() {
+	ensure_spike_deps
 	if ! picorv32_top_ready; then
 		build_picorv32_top
 	fi
@@ -781,11 +782,9 @@ check_ibex_cosim_run_deps() {
 build_ibex_cosim() {
 	ensure_spike_deps
 	check_ibex_cosim_build_deps
-	mkdir -p "$IBEX_BUILD_ROOT" "$DUMP_DIR" "$BUILD_DIR/ccache" "$BUILD_DIR/ccache-tmp"
+	mkdir -p "$IBEX_BUILD_ROOT" "$DUMP_DIR"
 	(
 		cd "$IBEX_DIR"
-		CCACHE_DIR="$BUILD_DIR/ccache" \
-		CCACHE_TEMPDIR="$BUILD_DIR/ccache-tmp" \
 		MAKEFLAGS="-j$BUILD_JOBS" \
 		PKG_CONFIG_PATH="$IBEX_PKG_CONFIG_PATH" "$FUSESOC" \
 			--cores-root=. \
@@ -966,15 +965,16 @@ build_veer_el2_top() {
 		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
 			"$PKG_CONFIG" --libs riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
 	)"
-	mkdir -p "$VEER_EL2_BUILD_ROOT" "$DUMP_DIR" "$LOG_DIR" "$BUILD_DIR/ccache" "$BUILD_DIR/ccache-tmp"
+	mkdir -p "$VEER_EL2_BUILD_ROOT" "$DUMP_DIR" "$LOG_DIR"
 
 	(
 		cd "$VEER_EL2_BUILD_ROOT"
 		export RV_ROOT="$VEER_EL2_DIR"
 		verilator --cc \
-			-CFLAGS "-std=c++20 -include sys/syscall.h -I$COSIM_SRC_DIR $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
+			-CFLAGS "-std=c++20 -include sys/syscall.h -I$COSIM_SRC_DIR -I$SRC_TOP_DIR $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
 			-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
 			+define+RV_OPENSOURCE \
+			-I"$SRC_TOP_DIR" \
 			-I"$VEER_EL2_CONFIG_DIR" \
 			-I"$VEER_EL2_DIR/testbench/axi4_mux" \
 			-I"$VEER_EL2_DIR/testbench" \
@@ -996,10 +996,11 @@ build_veer_el2_top() {
 			"$VEER_EL2_DIR/testbench/axi4_mux/axi_register_rd.v" \
 			"$VEER_EL2_DIR/testbench/axi4_mux/axi_register_wr.v" \
 			"$VEER_EL2_DIR/testbench/axi4_mux/priority_encoder.v" \
-		"$SRC_TOP_DIR/tb_veer_el2.sv" \
-		"$SRC_TOP_DIR/tb_veer_el2_cosim.cc" \
-		"$COSIM_SRC_DIR/cosim_bridge.cc" \
-		"$COSIM_SRC_DIR/cosim_session.cc" \
+			"$SRC_TOP_DIR/tb_veer_el2.sv" \
+			"$SRC_TOP_DIR/tb_veer_el2_cosim.cc" \
+			"$SRC_TOP_DIR/cosim_top_utils.cc" \
+			"$COSIM_SRC_DIR/cosim_bridge.cc" \
+			"$COSIM_SRC_DIR/cosim_session.cc" \
 		"$COSIM_SRC_DIR/cosim_config_policy.cc" \
 		"$COSIM_SRC_DIR/simulator_factory.cc" \
 		"$COSIM_SRC_DIR/elf_utils.cc" \
@@ -1011,9 +1012,7 @@ build_veer_el2_top() {
 			-GMAX_CYCLES="$VEER_EL2_MAX_CYCLES" \
 			$warning_flags \
 			-fno-table
-		CCACHE_DIR="$BUILD_DIR/ccache" \
-		CCACHE_TEMPDIR="$BUILD_DIR/ccache-tmp" \
-			make -j"$BUILD_JOBS" -C "$VEER_EL2_OBJ_DIR" -f Vtb_top.mk OPT_FAST="-Os"
+		make -j"$BUILD_JOBS" -C "$VEER_EL2_OBJ_DIR" -f Vtb_top.mk OPT_FAST="-Os"
 	)
 	veer_el2_build_stamp > "$VEER_EL2_BUILD_STAMP"
 }
@@ -1148,10 +1147,52 @@ run_one() {
 	esac
 }
 
+target_cosim_log_path() {
+	local target="$1"
+	case "$target" in
+		picorv32) printf '%s\n' "$PICORV32_COSIM_LOG" ;;
+		ibex) printf '%s\n' "$IBEX_COSIM_LOG" ;;
+		veer_el2) printf '%s\n' "$VEER_EL2_COSIM_LOG" ;;
+		*) return 1 ;;
+	esac
+}
+
+detect_cosim_status() {
+	local target="$1"
+	local cosim_log
+	cosim_log="$(target_cosim_log_path "$target" || true)"
+	if [[ -z "$cosim_log" || ! -f "$cosim_log" ]]; then
+		printf '%s\n' "NA"
+		return 0
+	fi
+	if rg -qi "mismatch|cosim fail|co-simulation failed" "$cosim_log"; then
+		printf '%s\n' "FAIL"
+	else
+		printf '%s\n' "PASS"
+	fi
+}
+
+detect_case_pass_status() {
+	local case_name="$1"
+	local run_log="$2"
+	if rg -q "(^|[^A-Z])PASS([^A-Z]|$)" "$run_log"; then
+		printf '%s\n' "PASS"
+		return 0
+	fi
+	if rg -q "OUT:[[:space:]]+123456789" "$run_log"; then
+		printf '%s\n' "PASS"
+		return 0
+	fi
+	printf '%s\n' "FAIL"
+}
+
 run_command() {
 	local target="${1:-all}"
 	local case_selector="${2:-$TEST_NAME}"
 	local target_name case_name
+	local run_log sim_exit pass_status cosim_status result
+	local -a rows=()
+	local fail_count=0
 
 	if (($# > 2)); then
 		printf 'error: run accepts at most target and case selectors\n\n' >&2
@@ -1167,9 +1208,44 @@ run_command() {
 
 	while IFS= read -r target_name; do
 		while IFS= read -r case_name; do
-			run_one "$target_name" "$case_name"
+			run_log="$LOG_DIR/run_${target_name}_${case_name}.log"
+			mkdir -p "$LOG_DIR"
+			printf '\n[RUN] target=%s case=%s log=%s\n' "$target_name" "$case_name" "$run_log"
+			if run_one "$target_name" "$case_name" 2>&1 | tee "$run_log"; then
+				sim_exit=0
+			else
+				sim_exit=$?
+			fi
+
+			pass_status="$(detect_case_pass_status "$case_name" "$run_log")"
+
+			cosim_status="$(detect_cosim_status "$target_name")"
+
+			if [[ "$sim_exit" -eq 0 && "$pass_status" == "PASS" && "$cosim_status" != "FAIL" ]]; then
+				result="PASS"
+			else
+				result="FAIL"
+				fail_count=$((fail_count + 1))
+			fi
+
+			rows+=("$target_name|$case_name|$sim_exit|$pass_status|$cosim_status|$result|$run_log")
 		done < <(case_list "$case_selector")
 	done < <(target_list "$target")
+
+	printf '\n'
+	printf '%-10s %-12s %-8s %-12s %-10s %-8s %s\n' "target" "case" "exit" "pass_marker" "cosim" "result" "run_log"
+	printf '%-10s %-12s %-8s %-12s %-10s %-8s %s\n' "------" "----" "----" "-----------" "-----" "------" "-------"
+	local row
+	for row in "${rows[@]}"; do
+		IFS='|' read -r target_name case_name sim_exit pass_status cosim_status result run_log <<<"$row"
+		printf '%-10s %-12s %-8s %-12s %-10s %-8s %s\n' \
+			"$target_name" "$case_name" "$sim_exit" "$pass_status" "$cosim_status" "$result" "$run_log"
+	done
+
+	if ((fail_count > 0)); then
+		printf '\nerror: %d run(s) failed\n' "$fail_count" >&2
+		return 1
+	fi
 }
 
 all() {
@@ -1180,8 +1256,6 @@ clean() {
 	remove_paths \
 		"$FIRMWARE_BUILD_DIR" \
 		"$SRC_BUILD_DIR" \
-		"$BUILD_DIR/ccache" \
-		"$BUILD_DIR/ccache-tmp" \
 		"$DUMP_DIR" \
 		"$LOG_DIR" \
 		"$TB_HOME/trace_core_00000000.log" \

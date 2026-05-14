@@ -16,6 +16,8 @@ filesets:
       - tb_ibex.sv
       - tb_ibex_cosim_bind.sv
       - tb_ibex_cosim.cc: { file_type: cppSource }
+      - cosim_top_utils.h: { is_include_file: true }
+      - cosim_top_utils.cc: { file_type: cppSource }
       - ../cosim/riscv_simulator.h: { is_include_file: true }
       - ../cosim/spike_simulator.h: { is_include_file: true }
       - ../cosim/cosim_bridge.h: { is_include_file: true }

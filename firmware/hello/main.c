@@ -10,5 +10,6 @@ int main(void)
 	print_str("hex=");
 	print_hex(0xdeadbeef, 8);
 	print_str("\n-------------------\n");
+	print_str("PASS\n");
 	return 0;
 }

@@ -20,6 +20,7 @@
 #include "Vtb_ibex__Syms.h"
 #include "cosim_bridge.h"
 #include "cosim_config_policy.h"
+#include "cosim_top_utils.h"
 #include "cosim.h"
 #include "ibex_pcounts.h"
 #include "verilated_toplevel.h"
@@ -30,55 +31,12 @@ namespace {
 
 constexpr uint32_t kRamSizeBytes = 0x00100000u;
 
-void EnsureDirectory(const std::string &dir) {
-  if (dir.empty()) {
-    return;
-  }
-
-  std::string path;
-  std::size_t pos = 0;
-  if (dir[0] == '/') {
-    path = "/";
-    pos = 1;
-  }
-
-  while (pos <= dir.size()) {
-    const std::size_t slash = dir.find('/', pos);
-    const std::string part = dir.substr(pos, slash - pos);
-    if (!part.empty()) {
-      if (!path.empty() && path.back() != '/') {
-        path += '/';
-      }
-      path += part;
-
-      if (mkdir(path.c_str(), 0777) != 0 && errno != EEXIST) {
-        throw std::runtime_error("failed to create " + path + ": " +
-                                 std::strerror(errno));
-      }
-    }
-
-    if (slash == std::string::npos) {
-      break;
-    }
-    pos = slash + 1;
-  }
-}
-
 void EnsureParentDirectory(const std::string &path) {
   const std::size_t slash = path.find_last_of('/');
   if (slash == std::string::npos) {
     return;
   }
-  EnsureDirectory(path.substr(0, slash));
-}
-
-uint32_t GetEnvUint32(const char *name, uint32_t default_value) {
-  const char *value = std::getenv(name);
-  if (value == nullptr || value[0] == '\0') {
-    return default_value;
-  }
-
-  return static_cast<uint32_t>(std::stoul(value, nullptr, 0));
+  top_ensure_directory(path.substr(0, slash));
 }
 
 class TbIbexCosim {
@@ -86,8 +44,8 @@ class TbIbexCosim {
   TbIbexCosim()
       : memutil_(),
         ram_("TOP.tb_ibex.u_ram.u_ram", kRamSizeBytes / 4, 4),
-        ram_base_(GetEnvUint32("IBEX_RAM_BASE", 0x80000000u)),
-        reset_vector_(GetEnvUint32("IBEX_RESET_VECTOR", 0x80000080u)),
+        ram_base_(top_env_u32("IBEX_RAM_BASE", 0x80000000u)),
+        reset_vector_(top_env_u32("IBEX_RESET_VECTOR", 0x80000080u)),
         cosim_(&cosim_bridge_adapter_) {}
 
   int Main(int argc, char **argv) {
@@ -149,20 +107,30 @@ class TbIbexCosim {
   uint32_t ram_base_;
   uint32_t reset_vector_;
   struct CosimBridgeAdapter : public Cosim {
+#define COSIM_BRIDGE_VOID_FORWARD(method, fn, decl, call) \
+    void method decl override { fn call; }
+#define COSIM_BRIDGE_BOOL_FORWARD(method, fn, decl, call) \
+    bool method decl override { return fn call == 0; }
+
     void add_memory(uint32_t base_addr, size_t size) override { (void)base_addr; (void)size; }
     bool backdoor_write_mem(uint32_t addr, size_t len, const uint8_t *data_in) override
     { (void)addr; (void)len; (void)data_in; return true; }
     bool backdoor_read_mem(uint32_t addr, size_t len, uint8_t *data_out) override
     { (void)addr; (void)len; (void)data_out; return true; }
-    bool step(uint32_t write_reg, uint32_t write_reg_data, uint32_t pc, bool sync_trap, bool suppress_reg_write) override
-    { return cosim_bridge_step_detail(write_reg, write_reg_data, pc, sync_trap, suppress_reg_write) == 0; }
-    void set_mip(uint32_t pre_mip, uint32_t post_mip) override { cosim_bridge_set_mip(pre_mip, post_mip); }
-    void set_nmi(bool nmi) override { cosim_bridge_set_nmi(nmi); }
-    void set_nmi_int(bool nmi_int) override { cosim_bridge_set_nmi_int(nmi_int); }
-    void set_debug_req(bool debug_req) override { cosim_bridge_set_debug_req(debug_req); }
-    void set_mcycle(uint64_t mcycle) override { cosim_bridge_set_mcycle(mcycle); }
-    void set_csr(const int csr_num, const uint32_t new_val) override { cosim_bridge_set_csr(static_cast<unsigned>(csr_num), new_val); }
-    void set_ic_scr_key_valid(bool valid) override { cosim_bridge_set_ic_scr_key_valid(valid); }
+    COSIM_BRIDGE_BOOL_FORWARD(step, cosim_bridge_step_detail,
+                              (uint32_t write_reg, uint32_t write_reg_data, uint32_t pc, bool sync_trap, bool suppress_reg_write),
+                              (write_reg, write_reg_data, pc, sync_trap, suppress_reg_write))
+    COSIM_BRIDGE_VOID_FORWARD(set_mip, cosim_bridge_set_mip,
+                              (uint32_t pre_mip, uint32_t post_mip),
+                              (pre_mip, post_mip))
+    COSIM_BRIDGE_VOID_FORWARD(set_nmi, cosim_bridge_set_nmi, (bool nmi), (nmi))
+    COSIM_BRIDGE_VOID_FORWARD(set_nmi_int, cosim_bridge_set_nmi_int, (bool nmi_int), (nmi_int))
+    COSIM_BRIDGE_VOID_FORWARD(set_debug_req, cosim_bridge_set_debug_req, (bool debug_req), (debug_req))
+    COSIM_BRIDGE_VOID_FORWARD(set_mcycle, cosim_bridge_set_mcycle, (uint64_t mcycle), (mcycle))
+    void set_csr(const int csr_num, const uint32_t new_val) override {
+      cosim_bridge_set_csr(static_cast<unsigned>(csr_num), new_val);
+    }
+    COSIM_BRIDGE_VOID_FORWARD(set_ic_scr_key_valid, cosim_bridge_set_ic_scr_key_valid, (bool valid), (valid))
     void notify_dside_access(const DSideAccessInfo &access_info) override {
       cosim_bridge_notify_dside_access(access_info.store, access_info.data, access_info.addr,
                                        access_info.be, access_info.error,
@@ -183,6 +151,8 @@ class TbIbexCosim {
     }
     void clear_errors() override { cosim_bridge_clear_errors(); }
     unsigned int get_insn_cnt() override { return cosim_bridge_insn_count(); }
+#undef COSIM_BRIDGE_BOOL_FORWARD
+#undef COSIM_BRIDGE_VOID_FORWARD
    private:
     std::vector<std::string> errors_cache_;
   };
@@ -221,13 +191,11 @@ class TbIbexCosim {
   }
 
   std::string GetElfPath() const {
-    const char *path = std::getenv("TEST_ELF");
-    return path == nullptr ? "build/firmware/hello/obj/firmware.elf" : path;
+    return top_env_string("TEST_ELF", "build/firmware/hello/obj/firmware.elf");
   }
 
   std::string GetPcountCsvPath() const {
-    const char *path = std::getenv("IBEX_PCOUNT_CSV");
-    return path == nullptr ? "log/tb_ibex_pcount.csv" : path;
+    return top_env_string("IBEX_PCOUNT_CSV", "log/tb_ibex_pcount.csv");
   }
 
   void CopyMemAreaToCosim(MemArea *area, uint32_t base_addr) {
@@ -251,7 +219,7 @@ class TbIbexCosim {
   void Run() {
     VerilatorSimCtrl &simctrl = VerilatorSimCtrl::GetInstance();
 
-    EnsureDirectory("log");
+    top_ensure_directory("log");
 
     std::cout << "Simulation of Ibex tb" << std::endl
               << "=====================" << std::endl

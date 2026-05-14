@@ -15,6 +15,8 @@ module tb_veer_el2_monitor;
   logic [31:0] last_retire_pc;
   logic [31:0] last_retire_instr;
   time last_retire_time;
+  wire dut_trace_known = (^tb_top.trace_rv_i_address_ip !== 1'bx) &&
+                         (^tb_top.trace_rv_i_insn_ip !== 1'bx);
   wire print_write = tb_top.rst_l &&
                      tb_top.lmem.awvalid &&
                      (tb_top.lmem.awaddr == SIM_PRINT_ADDR);
@@ -53,7 +55,7 @@ module tb_veer_el2_monitor;
     end
   endtask
 
-  task automatic finish_cosim();
+  task automatic finish_cosim;
     if (!cosim_finished) begin
       veer_cosim_finish();
       cosim_finished = 1'b1;
@@ -63,8 +65,7 @@ module tb_veer_el2_monitor;
   always @(posedge tb_top.core_clk) begin
     if (cosim_ready && !cosim_finished &&
         tb_top.trace_rv_i_valid_ip &&
-        (^tb_top.trace_rv_i_address_ip !== 1'bx) &&
-        (^tb_top.trace_rv_i_insn_ip !== 1'bx)) begin
+        dut_trace_known) begin
       report_retire(tb_top.trace_rv_i_address_ip, tb_top.trace_rv_i_insn_ip);
     end
   end

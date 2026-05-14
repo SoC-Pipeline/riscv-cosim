@@ -301,7 +301,7 @@ module picorv32_wrapper #(
 				cosim_elf_path = "build/firmware/hello/obj/firmware.elf";
 		end
 		$cosim_init(cosim_elf_path);
-		cosim_ready = 1;
+		cosim_ready = 1'b1;
 	end
 
 	task report_dut_retire;
@@ -314,7 +314,7 @@ module picorv32_wrapper #(
 				last_retire_pc = dut_pc;
 				last_retire_instr = dut_instr;
 				last_retire_time = $time;
-				has_last_retire = 1;
+				has_last_retire = 1'b1;
 			end
 		end
 	endtask
@@ -326,33 +326,31 @@ module picorv32_wrapper #(
 					report_dut_retire(rvfi_pc_rdata, rvfi_insn);
 				end
 				$cosim_finish();
-				cosim_finished = 1;
+				cosim_finished = 1'b1;
 			end
 		end
 	endtask
 
-    always @(posedge clk) begin
-        #1;
-        if (!cosim_finished && cosim_ready && rvfi_valid && dut_trace_known) begin
-            report_dut_retire(rvfi_pc_rdata, rvfi_insn);
-        end
-    end
+	task maybe_report_dut_retire;
+		begin
+			if (!cosim_finished && cosim_ready && rvfi_valid && dut_trace_known) begin
+				report_dut_retire(rvfi_pc_rdata, rvfi_insn);
+			end
+		end
+	endtask
 
-    always @(posedge clk) begin
-        if(resetn & trap) begin
-            #2;
-            finish_cosim();
-            $finish;
-        end
-    end
+	always @(posedge clk) begin
+		#1;
+		maybe_report_dut_retire();
+	end
 
-    always @(posedge clk) begin
-        if(resetn & tests_passed) begin
-            #2;
-            finish_cosim();
-            $finish;
-        end
-    end
+	always @(posedge clk) begin
+		if (resetn && (trap || tests_passed)) begin
+			#2;
+			finish_cosim();
+			$finish;
+		end
+	end
 
 
 endmodule
