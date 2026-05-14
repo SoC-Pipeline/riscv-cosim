@@ -15,7 +15,7 @@ set_default() {
 set_default TB_HOME "$SCRIPT_DIR"
 set_default TEST_NAME hello
 set_default SRC_DIR "$TB_HOME/src"
-set_default SRC_TOP_DIR "$SRC_DIR/top"
+set_default SRC_TOP_DIR "$SRC_DIR/top_cpu"
 set_default COSIM_SRC_DIR "$SRC_DIR/cosim"
 set_default PICORV32_DIR "$TB_HOME/external/picorv32"
 set_default PICORV32_RTL "$PICORV32_DIR/picorv32.v"
@@ -33,7 +33,7 @@ set_default PK_BUILD_DIR "$BUILD_DIR/pk-build"
 set_default PK_PREFIX "$BUILD_DIR/pk"
 set_default FIRMWARE_BUILD_DIR "$BUILD_DIR/firmware"
 set_default SRC_BUILD_DIR "$BUILD_DIR/src"
-set_default TOP_BUILD_DIR "$SRC_BUILD_DIR/top"
+set_default TOP_BUILD_DIR "$SRC_BUILD_DIR/top_cpu"
 set_default COSIM_BUILD_DIR "$SRC_BUILD_DIR/cosim"
 set_default IBEX_BUILD_ROOT "$TOP_BUILD_DIR/ibex"
 set_default VEER_EL2_BUILD_ROOT "$TOP_BUILD_DIR/veer_el2"
@@ -190,7 +190,7 @@ Frequently used environment overrides:
   VEER_EL2_SPIKE_COMMIT_LOG
                       VeeR EL2 Spike commit log. Default: log/veer_el2_spike_commit.log
   VEER_EL2_SPIKE_DTB  Prebuilt DTB used by Spike for VeeR cosim.
-                      Default: build/src/top/veer_el2/spike_veer_el2.dtb
+                      Default: build/src/top_cpu/veer_el2/spike_veer_el2.dtb
 
 Tool overrides:
   TOOLCHAIN_PREFIX, PYTHON, CXX, IVERILOG, VVP, FUSESOC, PKG_CONFIG
@@ -788,7 +788,7 @@ build_ibex_cosim() {
 		MAKEFLAGS="-j$BUILD_JOBS" \
 		PKG_CONFIG_PATH="$IBEX_PKG_CONFIG_PATH" "$FUSESOC" \
 			--cores-root=. \
-			--cores-root="$TB_HOME/src/top" \
+			--cores-root="$TB_HOME/src/top_cpu" \
 			run \
 			--target=sim \
 			--setup \

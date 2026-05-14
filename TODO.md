@@ -1,21 +1,18 @@
 # TODO
 
-1. 深入理解代码: external/Cores-VeeR-EL2/
-1. 理解top： external/Cores-VeeR-EL2/design/el2_veer_wrapper.sv
-1. 理解testbench: external/Cores-VeeR-EL2/testbench/veer_wrapper.sv
-1. 简单测试: cd external/Cores-VeeR-EL2/ && ./build.sh sim
+1. cosim的的形态探索
+1. 现在cosim支持cpu的指令对比，还有一种soc模式，spike直接接管soc中的cpu
 
 ## 需求
 
-1. 集成 external/Cores-VeeR-EL2/ 到 src/top/tb_veer_el2.sv
-1. 集成spike的cosim环境, 使 tb_veer_el2.sv 支持 cosim，注意参考已有的接口
-1. 支持 firmware/ 下的testcase，tb 中注意reset_vector 配置
+1. 探索soc模式，以picorv32 soc为例子
+1. external/picorv32/picosoc/icebreaker_tb.v 是相关tb
+1. 探索使用spike接管 external/picorv32/picosoc/picosoc.v 中的 picorv32
+1. 代码后续规划放到 src/top_soc
 
 ## 测试 
 
-1. picorv32: ./build.sh run picorv32
-1. ibex: ./build.sh clean && ./build.sh run ibex
-1. veer_el2: ./build.sh run veer_el2
+1. ./build.sh run all all
 
 ## tools
 

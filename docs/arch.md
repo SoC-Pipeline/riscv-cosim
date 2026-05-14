@@ -3,7 +3,7 @@
 ## Directory Roles
 
 ```text
-src/top/       Project Verilog/SystemVerilog testbench entry points
+src/top_cpu/       Project Verilog/SystemVerilog testbench entry points
 src/cosim/     C++ bridge frontend, simulator interface, and Spike backend
 firmware/      Firmware test inputs, startup code, and linker scripts
 scripts/       Python utilities used by firmware and log processing flows
@@ -39,9 +39,9 @@ firmware, top, and execution layers:
   -> build build/firmware/<case>/obj/firmware.hex
 
 ./build.sh build -t [picorv32|ibex|veer_el2|all]
-  -> build build/src/top/tb_picorv32.vvp
-  -> build build/src/top/ibex/.../Vtb_ibex
-  -> build build/src/top/veer_el2/obj_dir/Vtb_top
+  -> build build/src/top_cpu/tb_picorv32.vvp
+  -> build build/src/top_cpu/ibex/.../Vtb_ibex
+  -> build build/src/top_cpu/veer_el2/obj_dir/Vtb_top
 
 ./build.sh run [picorv32|ibex|veer_el2|all] [case|all]
   -> ensure required firmware and top artifacts
@@ -70,7 +70,7 @@ firmware
 
 ibex top
   -> build local:spike_cosim:tb_ibex_cosim through FuseSoC
-  -> write Verilator outputs under build/src/top/ibex
+  -> write Verilator outputs under build/src/top_cpu/ibex
   -> run Vtb_ibex --meminit=ram,<shared firmware elf>
   -> use local build/spike pkg-config files for SpikeCosim
 ```
@@ -84,7 +84,7 @@ firmware
   -> emit build/firmware/<case>/obj/firmware_veer.hex for VeeR memory loading
 
 veer_el2 top
-  -> generate VeeR configuration under build/src/top/veer_el2/snapshots/default
+  -> generate VeeR configuration under build/src/top_cpu/veer_el2/snapshots/default
   -> build external/Cores-VeeR-EL2/testbench/tb_top.sv with the project monitor
   -> run Vtb_top with +ELF_PATH=<shared firmware elf>
   -> feed VeeR retire trace PC/instruction events into CosimSession
@@ -178,17 +178,17 @@ different feature surfaces.
 The repository shares one local Spike build and now also shares the project
 `CosimSession` execution path across PicoRV32, Ibex, and VeeR EL2.
 
-The PicoRV32 example testbench is `src/top/tb_picorv32.v`. It keeps its own
+The PicoRV32 example testbench is `src/top_cpu/tb_picorv32.v`. It keeps its own
 clock, reset, memory, and DUT wiring, and calls `$cosim_retire` when it observes
 a retired DUT instruction. Other designs can use their own testbench and only
 need to provide equivalent retire PC/instruction events.
 
-The VeeR EL2 project monitor is `src/top/tb_veer_el2.sv`. It follows the same
+The VeeR EL2 project monitor is `src/top_cpu/tb_veer_el2.sv`. It follows the same
 PicoRV32 cosim contract but uses Verilator DPI functions because VeeR is built
 as a Verilator executable. The monitor initializes cosim from the selected ELF,
 reports `trace_rv_i_valid_ip`, `trace_rv_i_address_ip`, and
 `trace_rv_i_insn_ip`, and finishes cosim when firmware writes the shared finish
-value. `src/top/tb_veer_el2_cosim.cc` adapts those DPI calls to the same
+value. `src/top_cpu/tb_veer_el2_cosim.cc` adapts those DPI calls to the same
 `CosimSession` used by PicoRV32. VeeR cosim writes its compare log to
 `dump/veer_el2_cosim_result.log` by default and enables Spike commit logging at
 `dump/veer_el2_spike_commit.log`, matching the Ibex cosim debug flow.
@@ -212,10 +212,10 @@ bridge-interface experiments. In the current repository flow, PicoRV32 runtime
 is supported only with `vpi` under Icarus (`iverilog`/`vvp`). Selecting `dpi`
 is treated as an unsupported mode and fails fast with an explicit diagnostic.
 
-The Ibex example target is implemented in project sources by `src/top/tb_ibex.sv`.
+The Ibex example target is implemented in project sources by `src/top_cpu/tb_ibex.sv`.
 It instantiates `ibex_top_tracing`, RAM, bus, UART-style output, simulator
-control, and timer logic. `src/top/tb_ibex_cosim_bind.sv` binds the upstream
-Ibex checker interface to this top, and `src/top/tb_ibex_cosim.cc` provides the
+control, and timer logic. `src/top_cpu/tb_ibex_cosim_bind.sv` binds the upstream
+Ibex checker interface to this top, and `src/top_cpu/tb_ibex_cosim.cc` provides the
 Verilator harness for the generated `Vtb_ibex` type. The checker still uses
 `riscv_cosim_*` DPI calls from `external/ibex/dv/cosim`, but those calls are now
 adapted to project `CosimSession` through a local `Cosim` compatibility wrapper
@@ -328,7 +328,7 @@ installation.
 The VeeR EL2 target expects `external/Cores-VeeR-EL2` to be available. The
 project does not modify vendor RTL for the cosim path; it binds the project
 monitor into the upstream `tb_top` and keeps generated configuration, flists,
-DTB, and Verilator output under `build/src/top/veer_el2`.
+DTB, and Verilator output under `build/src/top_cpu/veer_el2`.
 
 ## Clean Behavior
 

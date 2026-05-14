@@ -8,7 +8,7 @@ checker.
 ## Layout
 
 ```text
-src/top/       Project-owned Verilog/SystemVerilog testbench entry points
+src/top_cpu/       Project-owned Verilog/SystemVerilog testbench entry points
 src/cosim/     Project VPI bridge C++ sources and Spike backend
 firmware/      Firmware tests and linker scripts
 scripts/       Python log and hex utilities
@@ -122,8 +122,8 @@ build/spike/
 build/pk/
 build/src/cosim/libspike.so
 build/src/cosim/libspike.vpi
-build/src/top/tb_picorv32.vvp
-build/src/top/ibex/
+build/src/top_cpu/tb_picorv32.vvp
+build/src/top_cpu/ibex/
 dump/
 ```
 
