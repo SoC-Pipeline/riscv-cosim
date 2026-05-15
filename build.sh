@@ -17,6 +17,7 @@ set_default TEST_NAME hello
 set_default SRC_DIR "$TB_HOME/src"
 set_default SRC_TOP_DIR "$SRC_DIR/top_cpu"
 set_default COSIM_SRC_DIR "$SRC_DIR/cosim"
+set_default MON_SRC_DIR "$SRC_DIR/mon"
 set_default PICORV32_DIR "$TB_HOME/external/picorv32"
 set_default PICORV32_RTL "$PICORV32_DIR/picorv32.v"
 set_default IBEX_DIR "$TB_HOME/external/ibex"
@@ -48,6 +49,7 @@ set_default VEER_EL2_SPIKE_DTB "$VEER_EL2_BUILD_ROOT/spike_veer_el2.dtb"
 set_default LOG_DIR "$TB_HOME/log"
 set_default DUMP_DIR "$LOG_DIR"
 set_default VPI_MODULE_DIR "$COSIM_BUILD_DIR"
+set_default VPI_STAMP "$COSIM_BUILD_DIR/vpi.stamp"
 set_default SIM_VVP "$TOP_BUILD_DIR/tb_picorv32.vvp"
 set_default PICORV32_TOP_STAMP "$TOP_BUILD_DIR/picorv32_top.stamp"
 
@@ -73,6 +75,7 @@ set_default IBEX_BOOT_ADDR "$(( (RESET_VECTOR - 0x80) & 0xFFFFFFFF ))"
 set_default IBEX_RAM_BASE 2147483648
 set_default PICORV32_COSIM_LOG "$LOG_DIR/picorv32_cosim_result.log"
 set_default PICORV32_SPIKE_COMMIT_LOG "$LOG_DIR/picorv32_spike_commit.log"
+set_default PICORV32_MON_LOG "$LOG_DIR/picorv32_mon.log"
 set_default PICORV32_COSIM_IF vpi
 set_default IBEX_COSIM_LOG "$LOG_DIR/ibex_cosim_result.log"
 set_default IBEX_SPIKE_COMMIT_LOG "$LOG_DIR/ibex_spike_commit.log"
@@ -125,6 +128,7 @@ Frequently used environment overrides:
   PICORV32_COSIM_LOG  PicoRV32 cosim compare log. Default: log/picorv32_cosim_result.log
   PICORV32_SPIKE_COMMIT_LOG
                       PicoRV32 Spike commit log. Default: log/picorv32_spike_commit.log
+  PICORV32_MON_LOG    PicoRV32 RVFI monitor log. Default: log/picorv32_mon.log
   BUILD_JOBS          Parallel jobs for Spike/pk/top builds. Default: 8
   SPIKE_SRC_DIR       Spike source. Default: external/ibex/external/riscv-isa-sim
   SPIKE_PREFIX        Spike install prefix. Default: build/spike
@@ -179,7 +183,7 @@ Selectors:
   mode:   cpu, soc, all
   cpu target: picorv32, ibex, veer_el2, all
   soc target: picorv32, all
-  case:   hello, pico_test, mem, all
+  case:   hello, pico_test, mem, pico_csr, all
 
 Examples:
   ./build.sh
@@ -292,6 +296,10 @@ case_obj_dir() {
 	printf '%s/%s/obj\n' "$FIRMWARE_BUILD_DIR" "$1"
 }
 
+case_firmware_stamp_path() {
+	printf '%s/.build.stamp\n' "$(case_obj_dir "$1")"
+}
+
 case_elf_path() {
 	printf '%s/firmware.elf\n' "$(case_obj_dir "$1")"
 }
@@ -315,6 +323,20 @@ case_veer_hex_path() {
 parse_uint32() {
 	local value="$1"
 	printf '%u\n' "$((value & 0xFFFFFFFF))"
+}
+
+firmware_stamp() {
+	local case_name="$1"
+	local src_dir
+	src_dir="$(case_dir "$case_name")"
+	printf 'RESET_VECTOR=%s\nTOOLCHAIN_PREFIX=%s\nARCH=%s\nABI=%s\n' \
+		"$(printf '0x%08x' "$(parse_uint32 "$RESET_VECTOR")")" \
+		"$TOOLCHAIN_PREFIX" \
+		"rv32imc" \
+		"ilp32"
+	find "$FIRMWARE_COMMON_DIR" "$src_dir" -maxdepth 1 -type f \
+		\( -name '*.c' -o -name '*.S' -o -name '*.h' -o -name '*.lds' -o -name '*.mk' -o -name 'Makefile' \) \
+		-print0 | sort -z | xargs -0 cksum
 }
 
 require_ibex_reset_vector() {
@@ -528,7 +550,8 @@ pk_ready() {
 }
 
 vpi_ready() {
-	[[ -f "$VPI_MODULE_DIR/libspike.vpi" ]]
+	[[ -f "$VPI_MODULE_DIR/libspike.vpi" && -f "$VPI_STAMP" ]] &&
+		[[ "$(cat "$VPI_STAMP")" == "$(vpi_stamp)" ]]
 }
 
 ibex_spike_pkg_config_ready() {
@@ -539,9 +562,26 @@ spike_deps_ready() {
 	spike_ready && spike_cosim_api_ready && pk_ready && vpi_ready && ibex_spike_pkg_config_ready
 }
 
+vpi_stamp() {
+	cksum \
+		"$COSIM_SRC_DIR/spike_dpi.cc" \
+		"$COSIM_SRC_DIR/cosim_bridge.cc" \
+		"$COSIM_SRC_DIR/cosim_session.cc" \
+		"$COSIM_SRC_DIR/cosim_config_policy.cc" \
+		"$COSIM_SRC_DIR/simulator_factory.cc" \
+		"$COSIM_SRC_DIR/elf_utils.cc" \
+		"$COSIM_SRC_DIR/spike_simulator.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.h" \
+		"$MON_SRC_DIR/mon_instr/txn_instr.h"
+}
+
 firmware_ready() {
 	local case_name="$1"
-	[[ -f "$(case_elf_path "$case_name")" && -f "$(case_hex_path "$case_name")" ]]
+	local stamp_path
+	stamp_path="$(case_firmware_stamp_path "$case_name")"
+	[[ -f "$(case_elf_path "$case_name")" && -f "$(case_hex_path "$case_name")" && -f "$stamp_path" ]] &&
+		[[ "$(cat "$stamp_path")" == "$(firmware_stamp "$case_name")" ]]
 }
 
 veer_firmware_ready() {
@@ -582,6 +622,11 @@ picorv32_top_stamp() {
 		"${PICORV32_COSIM_IF,,}"
 	cksum \
 		"$SRC_TOP_DIR/tb_picorv32.v" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.h" \
+		"$MON_SRC_DIR/mon_instr/txn_instr.h" \
+		"$COSIM_SRC_DIR/spike_dpi.cc" \
+		"$COSIM_SRC_DIR/cosim_session.cc" \
 		"$PICORV32_RTL"
 }
 
@@ -714,8 +759,10 @@ vpi() {
 		"$COSIM_SRC_DIR/simulator_factory.cc"
 		"$COSIM_SRC_DIR/elf_utils.cc"
 		"$COSIM_SRC_DIR/spike_simulator.cc"
+		"$MON_SRC_DIR/mon_instr/mon_instr.cc"
 	)
 	include_args+=("-I$COSIM_SRC_DIR")
+	include_args+=("-I$MON_SRC_DIR/mon_instr")
 	for dir in "${SPIKE_INCLUDE_DIRS[@]}" "${VPI_INCLUDE_DIRS[@]}"; do
 		[[ -n "$dir" ]] && include_args+=("-I$dir")
 	done
@@ -745,6 +792,7 @@ vpi() {
 		-lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl \
 		-Wl,-rpath="$SPIKE_LIB_DIR" \
 		-DDPI_WRAPPER
+	vpi_stamp > "$VPI_STAMP"
 }
 
 build_spike_deps() {
@@ -776,6 +824,7 @@ build_firmware_case() {
 	local case_name="$1"
 	ensure_spike_deps
 	firmware "$case_name"
+	firmware_stamp "$case_name" > "$(case_firmware_stamp_path "$case_name")"
 }
 
 ensure_firmware_case() {
@@ -820,10 +869,11 @@ sim_picorv32() {
 	require_file "$hex_path"
 	require_file "$VPI_MODULE_DIR/libspike.vpi"
 	require_file "$SIM_VVP"
-	mkdir -p "$DUMP_DIR" "$(dirname "$PICORV32_COSIM_LOG")" "$(dirname "$PICORV32_SPIKE_COMMIT_LOG")"
+	mkdir -p "$DUMP_DIR" "$(dirname "$PICORV32_COSIM_LOG")" "$(dirname "$PICORV32_SPIKE_COMMIT_LOG")" "$(dirname "$PICORV32_MON_LOG")"
 	LD_LIBRARY_PATH="$SPIKE_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 		PICORV32_COSIM_LOG="$PICORV32_COSIM_LOG" \
 		PICORV32_SPIKE_COMMIT_LOG="$PICORV32_SPIKE_COMMIT_LOG" \
+		PICORV32_MON_LOG="$PICORV32_MON_LOG" \
 		MY_PK_PATH="$MY_PK_PATH" "$VVP" -M "$VPI_MODULE_DIR" -m libspike "$SIM_VVP" +trace \
 		"+ELF_PATH=$elf_path" \
 		"+firmware=$hex_path" \

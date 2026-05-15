@@ -92,6 +92,14 @@ void CosimSession::retire(uint32_t dut_pc, uint32_t dut_instr)
 bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint32_t pc,
                                bool sync_trap, bool suppress_reg_write)
 {
+    return step_detail_with_csr(write_reg, write_reg_data, pc, sync_trap,
+                                suppress_reg_write, false, 0, 0, 0);
+}
+
+bool CosimSession::step_detail_with_csr(uint32_t write_reg, uint32_t write_reg_data, uint32_t pc,
+                                        bool sync_trap, bool suppress_reg_write, bool csr_valid,
+                                        unsigned csr_num, uint64_t csr_rmask, uint64_t csr_rdata)
+{
     if (!initialized_ || !simulator_) {
         errors_.push_back("cosim is not initialized");
         return false;
@@ -105,6 +113,9 @@ bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint
     auto push_error = [this](const std::string& msg) {
         errors_.push_back(msg);
         ++fail_count_;
+        if (log_.is_open()) {
+            log_ << "[COSIM FAIL] " << msg << "\n";
+        }
     };
     const SimulatorCapabilities caps = simulator_->capabilities();
     if (!caps.csr_access && !caps.interrupt_sync && !caps.debug_req) {
@@ -154,6 +165,15 @@ bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint
         }
     }
 
+    constexpr unsigned kCsrCycle = 0xC00;
+    constexpr unsigned kCsrCycleh = 0xC80;
+    constexpr unsigned kCsrInstret = 0xC02;
+    constexpr unsigned kCsrInstreth = 0xC82;
+    const bool volatile_counter = csr_valid &&
+                                  (csr_num == kCsrCycle || csr_num == kCsrCycleh ||
+                                   csr_num == kCsrInstret || csr_num == kCsrInstreth);
+    const bool compare_gpr_write = !volatile_counter;
+
     if (!sync_trap) {
         if (suppress_reg_write) {
             if (write_reg != 0) {
@@ -166,6 +186,13 @@ bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint
             if (changed_count > 1) {
                 std::ostringstream oss;
                 oss << "suppressed write expected <=1 GPR change, got " << changed_count;
+                push_error(oss.str());
+                return false;
+            }
+        } else if (!compare_gpr_write) {
+            if (changed_count > 1) {
+                std::ostringstream oss;
+                oss << "volatile CSR retire expected <=1 GPR change, got " << changed_count;
                 push_error(oss.str());
                 return false;
             }
@@ -208,8 +235,39 @@ bool CosimSession::step_detail(uint32_t write_reg, uint32_t write_reg_data, uint
         }
     }
 
+    if (csr_valid && csr_rmask != 0) {
+        if (!volatile_counter) {
+            const uint64_t iss_csr = static_cast<uint64_t>(get_csr(csr_num));
+            const uint64_t masked_dut = csr_rdata & csr_rmask;
+            const uint64_t masked_iss = iss_csr & csr_rmask;
+            if (masked_dut != masked_iss) {
+                std::ostringstream oss;
+                oss << "CSR mismatch 0x" << std::hex << csr_num
+                    << ", DUT=0x" << masked_dut
+                    << ", ISS=0x" << masked_iss
+                    << " (mask=0x" << csr_rmask << ")";
+                push_error(oss.str());
+                return false;
+            }
+        }
+    }
+
     ++pass_count_;
     ++compare_index_;
+    if (log_.is_open()) {
+        log_ << std::left << std::setw(15) << compare_index_ - 1
+             << ", detail PASS pc=0x" << std::right << std::hex << std::setw(8) << std::setfill('0') << pc
+             << " rd=x" << std::dec << write_reg
+             << " data=0x" << std::hex << std::setw(8) << write_reg_data
+             << " csr=" << (csr_valid ? "0x" : "-");
+        if (csr_valid) {
+            log_ << std::hex << csr_num
+                 << " mask=0x" << csr_rmask
+                 << " data=0x" << csr_rdata;
+        }
+        log_
+             << std::dec << std::setfill(' ') << "\n";
+    }
     return true;
 }
 

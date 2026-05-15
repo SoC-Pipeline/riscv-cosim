@@ -64,13 +64,18 @@ CPU-mode testbenches live under `src/top_cpu/`. They each provide a target-speci
 firmware.hex
   -> tb_picorv32.v memory preload
   -> PicoRV32 DUT executes firmware
-  -> retire observation in tb_picorv32.v
+  -> RVFI retire observation in tb_picorv32.v
+  -> src/mon/mon_instr transaction logging
   -> VPI calls in src/cosim/spike_dpi.cc
-  -> CosimSession::retire()
+  -> CosimSession::step_detail()
   -> SpikeSimulator golden state
 ```
 
 PicoRV32 uses Icarus Verilog plus the project VPI module. The build artifact name is still `libspike`, but the Verilog-facing tasks are a project cosim interface, not a raw Spike-only API.
+
+PicoRV32 is the first CPU target wired through the monitor path. The DUT data boundary is the RVFI retire interface emitted by `picorv32_axi` with `RISCV_FORMAL` enabled; the project does not modify `external/picorv32/picorv32.v` to add cosim instrumentation. On each known `rvfi_valid` retire, the wrapper reports the retire order, PC, instruction, trap flag, GPR writeback, RVFI memory fields, and supported RVFI CSR observations to `$cosim_monitor_retire`. The monitor writes the full packet to `PICORV32_MON_LOG` and submits PC plus GPR writeback, with optional CSR metadata, to `CosimSession::step_detail()`.
+
+The first-stage PicoRV32 monitor check covers retired PC and the single architectural GPR writeback for the instruction. RVFI memory fields are logged for debug and future extension, but memory consistency is not yet enforced by `CosimSession`. PicoRV32 also exposes RVFI counter CSR reads for `cycle`, `cycleh`, `instret`, and `instreth`; those observations are logged and carried through the monitor transaction, but they are treated as volatile and do not cause compare failures on their own. FPR and vector-register monitor resources remain future work for F/V-capable targets.
 
 ### Ibex
 
@@ -186,7 +191,7 @@ firmware/common/firmware.mk   reusable firmware build rules
 firmware/<case>/main.c        case-specific self-check
 ```
 
-The active cases are `hello`, `pico_test`, and `mem`. Each case reports success through `sim_pass()` and failure through `sim_fail()`.
+The default shared cases are `hello`, `pico_test`, and `mem`. Each case reports success through `sim_pass()` and failure through `sim_fail()`. PicoRV32-specific monitor validation can add target-focused cases such as `pico_csr` without changing the default cross-target `all` matrix.
 
 ### CPU Mode Loading
 
@@ -199,6 +204,7 @@ VeeR EL2: firmware_veer.hex -> upstream VeeR memory image flow
 ```
 
 All CPU targets use the same firmware reset convention: RAM at `0x80000000` and reset entry at `0x80000080`.
+`build.sh` also tracks firmware source, common runtime sources, linker script, and per-case Makefiles with a stamp file under `build/firmware/<case>/obj/.build.stamp`, so a changed firmware source is rebuilt automatically before the next run.
 
 ### SoC Mode Loading
 
@@ -248,6 +254,7 @@ The run flow writes three kinds of evidence:
 log/run_<target>_<case>.log              target stdout/stderr capture
 log/<target>_cosim_result.log            retire compare result log
 log/<target>_spike_commit.log            Spike commit log when enabled
+log/picorv32_mon.log                     PicoRV32 RVFI monitor packet log
 log/run_soc_spike_<case>.log             SoC-mode stdout/stderr capture
 log/soc_spike_<case>_commit.log          SoC-mode Spike commit log
 ```

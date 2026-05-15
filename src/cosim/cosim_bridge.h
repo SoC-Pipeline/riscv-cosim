@@ -15,6 +15,9 @@ int cosim_bridge_initialized();
 int cosim_bridge_retire(uint32_t pc, uint32_t instr);
 int cosim_bridge_step_detail(uint32_t write_reg, uint32_t write_reg_data, uint32_t pc,
                              int sync_trap, int suppress_reg_write);
+int cosim_bridge_step_detail_with_csr(uint32_t write_reg, uint32_t write_reg_data, uint32_t pc,
+                                      int sync_trap, int suppress_reg_write, int csr_valid,
+                                      unsigned csr_num, uint64_t csr_rmask, uint64_t csr_rdata);
 void cosim_bridge_set_mip(uint32_t pre_mip, uint32_t post_mip);
 void cosim_bridge_set_nmi(int nmi);
 void cosim_bridge_set_nmi_int(int nmi_int);

@@ -186,6 +186,27 @@ module picorv32_wrapper #(
 	wire [3:0]  rvfi_mem_wmask;
 	wire [31:0] rvfi_mem_rdata;
 	wire [31:0] rvfi_mem_wdata;
+	wire [63:0] rvfi_csr_mcycle_rmask = uut.picorv32_core.rvfi_csr_mcycle_rmask;
+	wire [63:0] rvfi_csr_mcycle_rdata = uut.picorv32_core.rvfi_csr_mcycle_rdata;
+	wire [63:0] rvfi_csr_mcycle_wmask = uut.picorv32_core.rvfi_csr_mcycle_wmask;
+	wire [63:0] rvfi_csr_mcycle_wdata = uut.picorv32_core.rvfi_csr_mcycle_wdata;
+	wire [63:0] rvfi_csr_minstret_rmask = uut.picorv32_core.rvfi_csr_minstret_rmask;
+	wire [63:0] rvfi_csr_minstret_rdata = uut.picorv32_core.rvfi_csr_minstret_rdata;
+	wire [63:0] rvfi_csr_minstret_wmask = uut.picorv32_core.rvfi_csr_minstret_wmask;
+	wire [63:0] rvfi_csr_minstret_wdata = uut.picorv32_core.rvfi_csr_minstret_wdata;
+	wire        rvfi_has_mcycle_csr = |rvfi_csr_mcycle_rmask | |rvfi_csr_mcycle_wmask;
+	wire        rvfi_has_minstret_csr = |rvfi_csr_minstret_rmask | |rvfi_csr_minstret_wmask;
+	wire [11:0] rvfi_csr_addr = rvfi_has_mcycle_csr ? ((rvfi_csr_mcycle_rmask[63:32] != 0) ? 12'hC80 : 12'hC00) :
+	                            rvfi_has_minstret_csr ? ((rvfi_csr_minstret_rmask[63:32] != 0) ? 12'hC82 : 12'hC02) :
+	                            12'h000;
+	wire [63:0] rvfi_csr_rmask = rvfi_has_mcycle_csr ? rvfi_csr_mcycle_rmask :
+	                             rvfi_has_minstret_csr ? rvfi_csr_minstret_rmask : 64'h0;
+	wire [63:0] rvfi_csr_rdata = rvfi_has_mcycle_csr ? rvfi_csr_mcycle_rdata :
+	                             rvfi_has_minstret_csr ? rvfi_csr_minstret_rdata : 64'h0;
+	wire [63:0] rvfi_csr_wmask = rvfi_has_mcycle_csr ? rvfi_csr_mcycle_wmask :
+	                             rvfi_has_minstret_csr ? rvfi_csr_minstret_wmask : 64'h0;
+	wire [63:0] rvfi_csr_wdata = rvfi_has_mcycle_csr ? rvfi_csr_mcycle_wdata :
+	                             rvfi_has_minstret_csr ? rvfi_csr_minstret_wdata : 64'h0;
 
 	picorv32_axi #(
 `ifndef SYNTH_TEST
@@ -199,6 +220,7 @@ module picorv32_wrapper #(
 		.ENABLE_DIV(1),
 		.ENABLE_IRQ(1),
 		.ENABLE_TRACE(1),
+		.REGS_INIT_ZERO(1),
 		.PROGADDR_RESET(RESET_VECTOR),
 		.PROGADDR_IRQ(32'h8000_0010),
 		.STACKADDR(32'h8001_8000)
@@ -286,11 +308,12 @@ module picorv32_wrapper #(
 	reg [1023:0] cosim_elf_path;
 	reg has_last_retire = 0;
 	reg cosim_finished = 0;
-	reg [31:0] last_retire_pc;
-	reg [31:0] last_retire_instr;
+	reg [63:0] last_retire_order;
 	time last_retire_time;
 	wire dut_trace_known = (^rvfi_pc_rdata !== 1'bx) &&
-	                       (^rvfi_insn !== 1'bx);
+	                       (^rvfi_insn !== 1'bx) &&
+	                       (^rvfi_rd_addr !== 1'bx) &&
+	                       (^rvfi_rd_wdata !== 1'bx);
 
 	initial begin
 		@(posedge resetn);
@@ -305,14 +328,17 @@ module picorv32_wrapper #(
 	end
 
 	task report_dut_retire;
-		input [31:0] dut_pc;
-		input [31:0] dut_instr;
 		begin
-			if (!has_last_retire || last_retire_time != $time ||
-					last_retire_pc != dut_pc || last_retire_instr != dut_instr) begin
-				$cosim_retire(dut_pc, dut_instr);
-				last_retire_pc = dut_pc;
-				last_retire_instr = dut_instr;
+			if (!has_last_retire || last_retire_time != $time || last_retire_order != rvfi_order) begin
+				$cosim_monitor_retire(rvfi_order[31:0], rvfi_pc_rdata, rvfi_insn, {31'b0, rvfi_trap},
+						{27'b0, rvfi_rd_addr}, rvfi_rd_wdata, rvfi_mem_addr, {28'b0, rvfi_mem_rmask},
+						{28'b0, rvfi_mem_wmask}, rvfi_mem_rdata, rvfi_mem_wdata,
+						{20'b0, rvfi_csr_addr},
+						rvfi_csr_rmask[31:0], rvfi_csr_rmask[63:32],
+						rvfi_csr_rdata[31:0], rvfi_csr_rdata[63:32],
+						rvfi_csr_wmask[31:0], rvfi_csr_wmask[63:32],
+						rvfi_csr_wdata[31:0], rvfi_csr_wdata[63:32]);
+				last_retire_order = rvfi_order;
 				last_retire_time = $time;
 				has_last_retire = 1'b1;
 			end
@@ -323,7 +349,7 @@ module picorv32_wrapper #(
 		begin
 			if (!cosim_finished) begin
 				if (cosim_ready && rvfi_valid && dut_trace_known) begin
-					report_dut_retire(rvfi_pc_rdata, rvfi_insn);
+					report_dut_retire();
 				end
 				$cosim_finish();
 				cosim_finished = 1'b1;
@@ -334,7 +360,7 @@ module picorv32_wrapper #(
 	task maybe_report_dut_retire;
 		begin
 			if (!cosim_finished && cosim_ready && rvfi_valid && dut_trace_known) begin
-				report_dut_retire(rvfi_pc_rdata, rvfi_insn);
+				report_dut_retire();
 			end
 		end
 	endtask

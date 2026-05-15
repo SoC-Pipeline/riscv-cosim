@@ -14,6 +14,7 @@
 
 #ifdef VPI_WRAPPER
     #include "vpi_user.h"
+    #include "mon_instr.h"
 #elif DPI_WRAPPER
     #include "svdpi.h"
 #endif
@@ -49,6 +50,16 @@ static bool session_ready(const char* task_name)
         return false;
     }
     return true;
+}
+
+static bool expect_arg(vpiHandle arg, vpiHandle args_iter, const char* task_name)
+{
+    if (arg) {
+        return true;
+    }
+    vpi_printf("[VPI ERROR] %s: missing required argument\n", task_name);
+    vpi_free_object(args_iter);
+    return false;
 }
 
 static uint32_t get_u32_arg(vpiHandle arg_h)
@@ -137,9 +148,104 @@ extern "C" {
             if (cosim_bridge_init(&config) != 0) {
                 throw std::runtime_error("failed to initialize cosim bridge");
             }
+
+            init_stage = "monitor init";
+            mon_instr_init(env_string("PICORV32_MON_LOG", "log/picorv32_mon.log").c_str());
         } catch (const std::exception& e) {
             vpi_printf("[VPI ERROR] $cosim_init: exception at %s: %s\n", init_stage, e.what());
+            mon_instr_reset();
             cosim_bridge_reset();
+            return 1;
+        }
+
+        return 0;
+    }
+
+    PLI_INT32 cosim_monitor_retire_vpi_calltf(PLI_BYTE8* user_data) {
+        if (!session_ready("$cosim_monitor_retire")) {
+            return 1;
+        }
+
+        vpiHandle systf_handle = vpi_handle(vpiSysTfCall, NULL);
+        vpiHandle args_iter = vpi_iterate(vpiArgument, systf_handle);
+        if (!args_iter) {
+            vpi_printf("[VPI ERROR] $cosim_monitor_retire: requires RVFI retire arguments\n");
+            return 1;
+        }
+
+        vpiHandle order_arg = vpi_scan(args_iter);
+        vpiHandle pc_arg = vpi_scan(args_iter);
+        vpiHandle instr_arg = vpi_scan(args_iter);
+        vpiHandle trap_arg = vpi_scan(args_iter);
+        vpiHandle rd_addr_arg = vpi_scan(args_iter);
+        vpiHandle rd_wdata_arg = vpi_scan(args_iter);
+        vpiHandle mem_addr_arg = vpi_scan(args_iter);
+        vpiHandle mem_rmask_arg = vpi_scan(args_iter);
+        vpiHandle mem_wmask_arg = vpi_scan(args_iter);
+        vpiHandle mem_rdata_arg = vpi_scan(args_iter);
+        vpiHandle mem_wdata_arg = vpi_scan(args_iter);
+        vpiHandle csr_addr_arg = vpi_scan(args_iter);
+        vpiHandle csr_rmask_lo_arg = vpi_scan(args_iter);
+        vpiHandle csr_rmask_hi_arg = vpi_scan(args_iter);
+        vpiHandle csr_rdata_lo_arg = vpi_scan(args_iter);
+        vpiHandle csr_rdata_hi_arg = vpi_scan(args_iter);
+        vpiHandle csr_wmask_lo_arg = vpi_scan(args_iter);
+        vpiHandle csr_wmask_hi_arg = vpi_scan(args_iter);
+        vpiHandle csr_wdata_lo_arg = vpi_scan(args_iter);
+        vpiHandle csr_wdata_hi_arg = vpi_scan(args_iter);
+        if (!expect_arg(order_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(pc_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(instr_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(trap_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(rd_addr_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(rd_wdata_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(mem_addr_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(mem_rmask_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(mem_wmask_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(mem_rdata_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(mem_wdata_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_addr_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_rmask_lo_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_rmask_hi_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_rdata_lo_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_rdata_hi_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_wmask_lo_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_wmask_hi_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_wdata_lo_arg, args_iter, "$cosim_monitor_retire") ||
+            !expect_arg(csr_wdata_hi_arg, args_iter, "$cosim_monitor_retire")) {
+            return 1;
+        }
+
+        MonInstrTxn txn;
+        txn.order = get_u32_arg(order_arg);
+        txn.pc = get_u32_arg(pc_arg);
+        txn.instr = get_u32_arg(instr_arg);
+        txn.trap = get_u32_arg(trap_arg) != 0;
+        txn.gpr.valid = true;
+        txn.gpr.addr = get_u32_arg(rd_addr_arg);
+        txn.gpr.data = get_u32_arg(rd_wdata_arg);
+        txn.mem.valid = true;
+        txn.mem.addr = get_u32_arg(mem_addr_arg);
+        txn.mem.rmask = get_u32_arg(mem_rmask_arg);
+        txn.mem.wmask = get_u32_arg(mem_wmask_arg);
+        txn.mem.rdata = get_u32_arg(mem_rdata_arg);
+        txn.mem.wdata = get_u32_arg(mem_wdata_arg);
+        txn.csr.addr = get_u32_arg(csr_addr_arg);
+        txn.csr.rmask = static_cast<uint64_t>(get_u32_arg(csr_rmask_lo_arg)) |
+                        (static_cast<uint64_t>(get_u32_arg(csr_rmask_hi_arg)) << 32);
+        txn.csr.rdata = static_cast<uint64_t>(get_u32_arg(csr_rdata_lo_arg)) |
+                        (static_cast<uint64_t>(get_u32_arg(csr_rdata_hi_arg)) << 32);
+        txn.csr.wmask = static_cast<uint64_t>(get_u32_arg(csr_wmask_lo_arg)) |
+                        (static_cast<uint64_t>(get_u32_arg(csr_wmask_hi_arg)) << 32);
+        txn.csr.wdata = static_cast<uint64_t>(get_u32_arg(csr_wdata_lo_arg)) |
+                        (static_cast<uint64_t>(get_u32_arg(csr_wdata_hi_arg)) << 32);
+        txn.csr.valid = txn.csr.rmask != 0 || txn.csr.wmask != 0;
+        txn.gpr.valid = txn.gpr.addr != 0 || txn.gpr.data != 0;
+        txn.mem.valid = txn.mem.rmask != 0 || txn.mem.wmask != 0;
+        vpi_free_object(args_iter);
+
+        if (mon_instr_retire(&txn) != 0) {
+            vpi_printf("[VPI ERROR] $cosim_monitor_retire: monitor retire failed\n");
             return 1;
         }
 
@@ -187,6 +293,8 @@ extern "C" {
             return 0;
         }
 
+        mon_instr_finish();
+
         if (cosim_bridge_finish() != 0) {
             vpi_printf("[VPI ERROR] $cosim_finish: bridge finish failed\n");
             return 1;
@@ -224,6 +332,7 @@ extern "C" {
 
     PLI_INT32 cleanup_cosim_vpi(p_cb_data cb_data_p) {
         if (cosim_bridge_initialized()) {
+            mon_instr_reset();
             cosim_bridge_reset();
             std::cout << "[VPI_INFO] Cosim session cleaned up." << std::endl;
         }
@@ -233,6 +342,7 @@ extern "C" {
     void register_cosim_vpi_tasks() {
         register_task("$cosim_init", cosim_init_vpi_calltf);
         register_task("$cosim_retire", cosim_retire_vpi_calltf);
+        register_task("$cosim_monitor_retire", cosim_monitor_retire_vpi_calltf);
         register_task("$cosim_finish", cosim_finish_vpi_calltf);
         register_task("$cosim_get_status", cosim_get_status_vpi_calltf);
 

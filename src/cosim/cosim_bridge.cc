@@ -81,6 +81,20 @@ int cosim_bridge_step_detail(uint32_t write_reg, uint32_t write_reg_data, uint32
                : -2;
 }
 
+int cosim_bridge_step_detail_with_csr(uint32_t write_reg, uint32_t write_reg_data, uint32_t pc,
+                                      int sync_trap, int suppress_reg_write, int csr_valid,
+                                      unsigned csr_num, uint64_t csr_rmask, uint64_t csr_rdata)
+{
+    if (!g_session || !g_session->initialized()) {
+        return -1;
+    }
+    return g_session->step_detail_with_csr(write_reg, write_reg_data, pc, sync_trap != 0,
+                                           suppress_reg_write != 0, csr_valid != 0, csr_num,
+                                           csr_rmask, csr_rdata)
+               ? 0
+               : -2;
+}
+
 void cosim_bridge_set_mip(uint32_t pre_mip, uint32_t post_mip)
 {
     if (!g_session || !g_session->initialized()) {

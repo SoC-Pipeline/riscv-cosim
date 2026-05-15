@@ -32,6 +32,5 @@ int main(void)
 	print_chr('\n');
 
 	print_chr('\n');
-
 	finish_case(a == 0xDEADu && b == 0xBEADu && c == 0x19D5Au);
 }

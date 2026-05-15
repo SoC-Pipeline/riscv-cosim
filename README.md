@@ -23,7 +23,7 @@ docs/arch.md    Architecture, data flow, firmware loading, and protocol details.
 ```text
                  +-----------------------------+
                  |        firmware/*           |
-                 |  hello / pico_test / mem    |
+                 | hello / pico_test / mem     |
                  +--------------+--------------+
                                 |
                                 v
@@ -91,6 +91,8 @@ export RESET_VECTOR=0x80000080
 export FIRMWARE_CASES="hello pico_test mem"
 ```
 
+`hello`, `pico_test`, and `mem` remain the default shared cases for `./build.sh all`. Target-specific debug or monitor cases, such as PicoRV32-only `pico_csr`, can still be run directly with `./build.sh run cpu picorv32 pico_csr`.
+
 ## Outputs
 
 Generated artifacts live under `build/`; logs live under `log/`.
@@ -116,3 +118,4 @@ See [docs/arch.md](docs/arch.md) for architecture, CPU/SoC data flows, firmware 
 
 1. [Ibex co-simulation documentation](https://ibex-core.readthedocs.io/en/latest/03_reference/cosim.html)
 1. [spike-cosim](https://github.com/farukyld/spike-cosim)
+1. [cosim-arch-checker](https://github.com/tenstorrent/cosim-arch-checker)

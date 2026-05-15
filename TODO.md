@@ -1,16 +1,19 @@
 # TODO
 
-1. cosim的的插入式形态实现
+1. 理解代码 tmp/cosim-arch-checker
+1. 理解 cosim-arch-checker 的monitor功能:
+    - tmp/cosim-arch-checker/README.md
+    - tmp/cosim-arch-checker/mon/
 
 ## 需求
 
-1. soc模式将spike/simulator插入替代cpu，以picorv32 soc为例子
-1. external/picorv32/picosoc/icebreaker_tb.v 是相关tb
-1. 使用spike接管 external/picorv32/picosoc/picosoc.v 中的 picorv32/cpu
+1. cpu 模式下主要用于验证cpu，现在只有retire的对比，需要借鉴 tmp/cosim-arch-checker, 使用更深层次的对比check
+1. 移植 tmp/cosim-arch-checker/mon/ 到 src/mon
+1. 先以 picorv32 为例子，集成mon到其中，注意打印信息到特定文件
 
 ## 测试 
 
-1. picorv32: ./build.sh run soc picorv32 mem
+1. picorv32: ./build.sh run cpu picorv32 hello
 1. ./build.sh run all all
 
 ## tools
