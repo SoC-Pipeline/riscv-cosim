@@ -139,6 +139,16 @@ int mon_instr_retire(const MonInstrTxn* txn)
     return g_monitor->retire(*txn) ? 0 : -2;
 }
 
+int mon_instr_retire_retire_only(uint32_t order, uint32_t pc, uint32_t instr, int trap)
+{
+    MonInstrTxn txn;
+    txn.order = order;
+    txn.pc = pc;
+    txn.instr = instr;
+    txn.trap = trap != 0;
+    return mon_instr_retire(&txn);
+}
+
 int mon_instr_retire_simple(uint32_t order, uint32_t pc, uint32_t instr, int trap,
                             int gpr_valid, uint32_t rd_addr, uint32_t rd_wdata)
 {

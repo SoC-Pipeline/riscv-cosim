@@ -36,6 +36,7 @@ extern "C" {
 void mon_instr_init(const char* log_path);
 void mon_instr_init_mode(const char* log_path, uint32_t compare_mode);
 int mon_instr_retire(const MonInstrTxn* txn);
+int mon_instr_retire_retire_only(uint32_t order, uint32_t pc, uint32_t instr, int trap);
 int mon_instr_retire_simple(uint32_t order, uint32_t pc, uint32_t instr, int trap,
                             int gpr_valid, uint32_t rd_addr, uint32_t rd_wdata);
 void mon_instr_finish();

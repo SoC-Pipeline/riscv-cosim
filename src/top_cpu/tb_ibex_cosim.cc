@@ -32,14 +32,6 @@ namespace {
 
 constexpr uint32_t kRamSizeBytes = 0x00100000u;
 
-void EnsureParentDirectory(const std::string &path) {
-  const std::size_t slash = path.find_last_of('/');
-  if (slash == std::string::npos) {
-    return;
-  }
-  top_ensure_directory(path.substr(0, slash));
-}
-
 class TbIbexCosim {
  public:
   TbIbexCosim()
@@ -243,7 +235,7 @@ class TbIbexCosim {
     std::cout << ibex_pcount_string(false);
 
     const std::string pcount_csv_path = GetPcountCsvPath();
-    EnsureParentDirectory(pcount_csv_path);
+    top_ensure_parent_directory(pcount_csv_path);
     std::ofstream pcount_csv(pcount_csv_path);
     if (!pcount_csv.is_open()) {
       throw std::runtime_error("failed to open " + pcount_csv_path);
@@ -283,7 +275,7 @@ void create_cosim(svBit secure_ibex, svBit icache_en,
 void ibex_mon_init() {
   const std::string mon_log_path =
       top_env_string("IBEX_MON_LOG", "log/ibex_mon.log");
-  EnsureParentDirectory(mon_log_path);
+  top_ensure_parent_directory(mon_log_path);
   mon_instr_init_mode(mon_log_path.c_str(),
                       static_cast<uint32_t>(MonInstrCompareMode::LogOnly));
 }

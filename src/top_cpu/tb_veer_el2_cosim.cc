@@ -17,14 +17,6 @@ namespace {
 
 vluint64_t main_time = 0;
 
-void EnsureParentDirectory(const std::string& path) {
-    const std::size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos) {
-        return;
-    }
-    top_ensure_directory(path.substr(0, slash));
-}
-
 } // namespace
 
 double sc_time_stamp() {
@@ -51,7 +43,7 @@ extern "C" void veer_cosim_init(const char *elf_path) {
 
     const std::string mon_log_path =
         top_env_string("VEER_EL2_MON_LOG", "log/veer_el2_mon.log");
-    EnsureParentDirectory(mon_log_path);
+    top_ensure_parent_directory(mon_log_path);
     mon_instr_init_mode(
         mon_log_path.c_str(),
         static_cast<uint32_t>(MonInstrCompareMode::Retire));
@@ -62,19 +54,13 @@ extern "C" void veer_cosim_retire(unsigned pc, unsigned instr, unsigned char tra
                                   unsigned rd_wdata, unsigned char csr_valid,
                                   unsigned csr_addr, unsigned csr_wdata) {
     static uint32_t retire_order = 0;
-    MonInstrTxn txn;
-    txn.order = retire_order++;
-    txn.pc = pc;
-    txn.instr = instr;
-    txn.trap = trap != 0;
-    txn.gpr.valid = gpr_valid != 0;
-    txn.gpr.addr = rd_addr;
-    txn.gpr.data = rd_wdata;
-    txn.csr.valid = csr_valid != 0;
-    txn.csr.addr = csr_addr;
-    txn.csr.wmask = txn.csr.valid ? 0x00000000ffffffffull : 0;
-    txn.csr.wdata = csr_wdata;
-    (void)mon_instr_retire(&txn);
+    (void)gpr_valid;
+    (void)rd_addr;
+    (void)rd_wdata;
+    (void)csr_valid;
+    (void)csr_addr;
+    (void)csr_wdata;
+    (void)mon_instr_retire_retire_only(retire_order++, pc, instr, trap != 0);
 }
 
 extern "C" void veer_cosim_finish() {

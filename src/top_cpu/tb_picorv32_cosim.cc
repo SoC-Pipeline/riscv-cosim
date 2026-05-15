@@ -19,15 +19,6 @@ namespace {
 vluint64_t main_time = 0;
 bool test_passed = false;
 
-void EnsureParentDirectory(const std::string& path)
-{
-    const std::size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos) {
-        return;
-    }
-    top_ensure_directory(path.substr(0, slash));
-}
-
 std::string GetElfPath(const char* elf_path)
 {
     if (elf_path != nullptr && elf_path[0] != '\0') {
@@ -66,7 +57,7 @@ extern "C" int picorv32_cosim_init(const char* elf_path)
 
         const std::string mon_log_path =
             top_env_string("PICORV32_MON_LOG", "log/picorv32_mon.log");
-        EnsureParentDirectory(mon_log_path);
+        top_ensure_parent_directory(mon_log_path);
         mon_instr_init(mon_log_path.c_str());
         test_passed = false;
         return 0;

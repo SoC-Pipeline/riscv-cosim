@@ -71,3 +71,12 @@ void top_ensure_directory(const std::string& dir)
         pos = slash + 1;
     }
 }
+
+void top_ensure_parent_directory(const std::string& path)
+{
+    const std::size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) {
+        return;
+    }
+    top_ensure_directory(path.substr(0, slash));
+}
