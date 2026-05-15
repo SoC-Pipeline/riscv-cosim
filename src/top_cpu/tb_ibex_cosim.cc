@@ -281,9 +281,11 @@ void create_cosim(svBit secure_ibex, svBit icache_en,
 }
 
 void ibex_mon_init() {
-  mon_instr_init_mode(
-      top_env_string("IBEX_MON_LOG", "log/ibex_mon.log").c_str(),
-      static_cast<uint32_t>(MonInstrCompareMode::LogOnly));
+  const std::string mon_log_path =
+      top_env_string("IBEX_MON_LOG", "log/ibex_mon.log");
+  EnsureParentDirectory(mon_log_path);
+  mon_instr_init_mode(mon_log_path.c_str(),
+                      static_cast<uint32_t>(MonInstrCompareMode::LogOnly));
 }
 
 int ibex_mon_retire(uint32_t order, uint32_t pc, uint32_t instr, svBit trap,

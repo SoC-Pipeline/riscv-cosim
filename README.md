@@ -55,7 +55,7 @@ docs/arch.md    Architecture, data flow, firmware loading, and protocol details.
 
 ## Prerequisites
 
-The common development environment uses a RISC-V GCC toolchain, `elf2hex`, Icarus Verilog, Verilator, FuseSoC, and the external submodules.
+The common development environment uses a RISC-V GCC toolchain, `elf2hex`, Verilator, FuseSoC, and the external submodules.
 
 ```bash
 module load riscv-toolchain/master-v20251230 openEDA/verilator/v5.010
@@ -104,6 +104,7 @@ build/firmware/<case>/obj/      Firmware ELF/HEX artifacts.
 build/spike/                    Local Spike install.
 build/pk/                       Local proxy kernel install.
 build/src/top_cpu/              CPU-mode simulator outputs.
+build/src/top_cpu/picorv32/     PicoRV32 Verilator output.
 build/src/top_cpu/soc/          SoC-mode Verilator output.
 log/                            Run logs, compare logs, commit logs.
 ```

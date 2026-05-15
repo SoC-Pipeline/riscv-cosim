@@ -8,7 +8,6 @@
 `timescale 1 ns / 1 ps
 
 
-`ifndef VERILATOR
 module tb_picorv32 #(
 	parameter AXI_TEST = 0,
 	parameter VERBOSE = 0,
@@ -29,6 +28,7 @@ module tb_picorv32 #(
 	end
 
 	
+`ifndef VERILATOR
 	initial begin
 		if ($test$plusargs("vcd")) begin
 			$dumpfile("dump/tb_picorv32.vcd");
@@ -38,6 +38,13 @@ module tb_picorv32 #(
 		$display("TIMEOUT");
 		$finish;
 	end
+`else
+	initial begin
+		repeat (1000000) @(posedge clk);
+		$display("TIMEOUT");
+		$finish;
+	end
+`endif
 
 	reg [1023:0] elf_path;
 	reg [1023:0] pk_path;
@@ -90,7 +97,6 @@ module tb_picorv32 #(
 		.trace_data(trace_data)
 	);
 endmodule
-`endif
 
 module picorv32_wrapper #(
 	parameter AXI_TEST = 0,
@@ -103,6 +109,33 @@ module picorv32_wrapper #(
 	output trace_valid,
 	output [35:0] trace_data
 );
+	import "DPI-C" function int picorv32_cosim_init(input string elf_path);
+	import "DPI-C" function int picorv32_cosim_monitor_retire(
+		input int unsigned order,
+		input int unsigned pc,
+		input int unsigned instr,
+		input int unsigned trap,
+		input int unsigned rd_addr,
+		input int unsigned rd_wdata,
+		input int unsigned mem_addr,
+		input int unsigned mem_rmask,
+		input int unsigned mem_wmask,
+		input int unsigned mem_rdata,
+		input int unsigned mem_wdata,
+		input int unsigned csr_addr,
+		input int unsigned csr_rmask_lo,
+		input int unsigned csr_rmask_hi,
+		input int unsigned csr_rdata_lo,
+		input int unsigned csr_rdata_hi,
+		input int unsigned csr_wmask_lo,
+		input int unsigned csr_wmask_hi,
+		input int unsigned csr_wdata_lo,
+		input int unsigned csr_wdata_hi
+	);
+	import "DPI-C" function void picorv32_cosim_finish();
+	import "DPI-C" function int unsigned picorv32_cosim_fail_count();
+	import "DPI-C" function void picorv32_cosim_set_test_result(input bit passed);
+
 	wire tests_passed;
 	reg [31:0] irq = 0;
 
@@ -316,6 +349,7 @@ module picorv32_wrapper #(
 	                       (^rvfi_rd_wdata !== 1'bx);
 
 	initial begin
+		int init_rc;
 		@(posedge resetn);
 		$display("=========================== COSIM RUN ===========================");
 		$display("Reset is released at time %.1f[ns]", $time);
@@ -323,14 +357,20 @@ module picorv32_wrapper #(
 		if (!$value$plusargs("ELF_PATH=%s", cosim_elf_path)) begin
 				cosim_elf_path = "build/firmware/hello/obj/firmware.elf";
 		end
-		$cosim_init(cosim_elf_path);
+		init_rc = picorv32_cosim_init(cosim_elf_path);
+		if (init_rc != 0) begin
+			$display("FAIL: PicoRV32 cosim init failed.");
+			$fatal;
+		end
 		cosim_ready = 1'b1;
 	end
 
 	task report_dut_retire;
+		int retire_rc;
 		begin
 			if (!has_last_retire || last_retire_time != $time || last_retire_order != rvfi_order) begin
-				$cosim_monitor_retire(rvfi_order[31:0], rvfi_pc_rdata, rvfi_insn, {31'b0, rvfi_trap},
+				retire_rc = picorv32_cosim_monitor_retire(
+						rvfi_order[31:0], rvfi_pc_rdata, rvfi_insn, {31'b0, rvfi_trap},
 						{27'b0, rvfi_rd_addr}, rvfi_rd_wdata, rvfi_mem_addr, {28'b0, rvfi_mem_rmask},
 						{28'b0, rvfi_mem_wmask}, rvfi_mem_rdata, rvfi_mem_wdata,
 						{20'b0, rvfi_csr_addr},
@@ -338,6 +378,10 @@ module picorv32_wrapper #(
 						rvfi_csr_rdata[31:0], rvfi_csr_rdata[63:32],
 						rvfi_csr_wmask[31:0], rvfi_csr_wmask[63:32],
 						rvfi_csr_wdata[31:0], rvfi_csr_wdata[63:32]);
+				if (retire_rc != 0) begin
+					$display("FAIL: PicoRV32 cosim retire mismatch.");
+					$fatal;
+				end
 				last_retire_order = rvfi_order;
 				last_retire_time = $time;
 				has_last_retire = 1'b1;
@@ -351,7 +395,8 @@ module picorv32_wrapper #(
 				if (cosim_ready && rvfi_valid && dut_trace_known) begin
 					report_dut_retire();
 				end
-				$cosim_finish();
+				picorv32_cosim_set_test_result(tests_passed);
+				picorv32_cosim_finish();
 				cosim_finished = 1'b1;
 			end
 		end
@@ -374,8 +419,15 @@ module picorv32_wrapper #(
 		if (resetn && (trap || tests_passed)) begin
 			#2;
 			finish_cosim();
+			if (picorv32_cosim_fail_count() != 0) begin
+				$fatal;
+			end
 			$finish;
 		end
+	end
+
+	final begin
+		finish_cosim();
 	end
 
 

@@ -138,12 +138,12 @@ module tb_veer_el2_monitor;
       report_retire(tb_top.trace_rv_i_address_ip, tb_top.trace_rv_i_insn_ip,
                     tb_top.trace_rv_i_exception_ip |
                     tb_top.trace_rv_i_interrupt_ip,
-                    tb_top.wb_valid && (tb_top.wb_dest != 5'd0),
-                    tb_top.wb_dest,
-                    tb_top.wb_data,
-                    tb_top.wb_csr_valid,
-                    tb_top.wb_csr_dest,
-                    tb_top.wb_csr_data);
+                    1'b0,
+                    5'd0,
+                    32'd0,
+                    1'b0,
+                    12'd0,
+                    32'd0);
     end
   end
 

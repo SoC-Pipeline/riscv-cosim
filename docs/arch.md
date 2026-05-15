@@ -17,7 +17,7 @@ The project has two execution modes with different validation purposes.
         |
         | retire PC/instruction/events
         v
- cosim_bridge (VPI/DPI C ABI)
+ cosim_bridge (DPI/C ABI)
         |
         v
  CosimSession
@@ -66,14 +66,14 @@ firmware.hex
   -> PicoRV32 DUT executes firmware
   -> RVFI retire observation in tb_picorv32.v
   -> src/mon/mon_instr transaction logging
-  -> VPI calls in src/cosim/spike_dpi.cc
+  -> DPI calls in src/top_cpu/tb_picorv32_cosim.cc
   -> CosimSession::step_detail()
   -> SpikeSimulator golden state
 ```
 
-PicoRV32 uses Icarus Verilog plus the project VPI module. The build artifact name is still `libspike`, but the Verilog-facing tasks are a project cosim interface, not a raw Spike-only API.
+PicoRV32 uses a Verilator top-level testbench plus project-owned DPI callbacks implemented in `src/top_cpu/tb_picorv32_cosim.cc`.
 
-PicoRV32 is the first CPU target wired through the monitor path. The DUT data boundary is the RVFI retire interface emitted by `picorv32_axi` with `RISCV_FORMAL` enabled; the project does not modify `external/picorv32/picorv32.v` to add cosim instrumentation. On each known `rvfi_valid` retire, the wrapper reports the retire order, PC, instruction, trap flag, GPR writeback, RVFI memory fields, and supported RVFI CSR observations to `$cosim_monitor_retire`. The monitor writes the full packet to `PICORV32_MON_LOG` and submits PC plus GPR writeback, with optional CSR metadata, to `CosimSession::step_detail()`.
+PicoRV32 is the first CPU target wired through the monitor path. The DUT data boundary is the RVFI retire interface emitted by `picorv32_axi` with `RISCV_FORMAL` enabled; the project does not modify `external/picorv32/picorv32.v` to add cosim instrumentation. On each known `rvfi_valid` retire, the wrapper reports the retire order, PC, instruction, trap flag, GPR writeback, RVFI memory fields, and supported RVFI CSR observations through a PicoRV32-specific DPI callback. The monitor writes the full packet to `PICORV32_MON_LOG` and submits PC plus GPR writeback, with optional CSR metadata, to `CosimSession::step_detail()`.
 
 The first-stage PicoRV32 monitor check covers retired PC and the single architectural GPR writeback for the instruction. RVFI memory fields are logged for debug and future extension, but memory consistency is not yet enforced by `CosimSession`. PicoRV32 also exposes RVFI counter CSR reads for `cycle`, `cycleh`, `instret`, and `instreth`; those observations are logged and carried through the monitor transaction, but they are treated as volatile and do not cause compare failures on their own. FPR and vector-register monitor resources remain future work for F/V-capable targets.
 
@@ -108,32 +108,31 @@ firmware.elf + firmware_veer.hex
 
 The project monitor binds into the upstream VeeR testbench without modifying
 vendor RTL for the cosim path. The first-stage VeeR monitor uses only the
-public trace retire interface together with writeback mirrors already exposed by
-the upstream `tb_top` testbench. The current monitor packet includes:
+public trace retire interface. The current monitor packet includes:
 
 - retire PC/instruction from `trace_rv_i_*`
 - trap indication from `trace_rv_i_exception_ip | trace_rv_i_interrupt_ip`
-- GPR writeback from `tb_top.wb_valid/wb_dest/wb_data`
-- CSR writeback log fields from `tb_top.wb_csr_valid/wb_csr_dest/wb_csr_data`
 
-Only `pc/instr` are currently used for VeeR compare in `Retire` mode. GPR and
-CSR resources are logged for debug and parity with the shared monitor schema,
-but they do not yet drive compare failures. In particular, the VeeR CSR path is
-write-only logging today; it does not provide the RVFI-style CSR read mask/data
-needed for full CSR semantic compare.
+Only `pc/instr` are currently used for VeeR compare in `Retire` mode. VeeR
+does not currently log GPR or CSR writeback through the shared monitor path,
+because the upstream `tb_top.wb_*` mirrors are updated with nonblocking
+assignments on the same clock edge as the retire indication and therefore do
+not align reliably with the retiring instruction. A future extension should
+source GPR/CSR data from a commit-stage interface that is guaranteed to be
+cycle-aligned with `trace_rv_i_valid_ip`.
 
 ## Cosim Layering
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Testbench / Monitor                      │
-│      PicoRV32 VPI       Ibex DPI        VeeR EL2 DPI        │
+│      PicoRV32 DPI       Ibex DPI        VeeR EL2 DPI        │
 └──────────────┬──────────────┬──────────────┬────────────────┘
                │              │              │
                v              v              v
       ┌────────────────────────────────────────────┐
       │              cosim_bridge                  │
-      │       C ABI wrappers for VPI/DPI users     │
+      │          C ABI wrappers for DPI users      │
       └────────────────────┬───────────────────────┘
                            v
       ┌────────────────────────────────────────────┐
@@ -149,7 +148,7 @@ needed for full CSR semantic compare.
 
 Layer responsibilities:
 
-- `cosim_bridge`: C ABI boundary for DPI/VPI users; it should remain thin.
+- `cosim_bridge`: C ABI boundary for DPI users; it should remain thin.
 - `CosimSession`: verification policy, retire comparison, counters, and log generation.
 - `RiscvSimulator`: backend-neutral reference simulator interface.
 - `SpikeSimulator`: current backend implementation using Spike `processor_t`.

@@ -17,6 +17,14 @@ namespace {
 
 vluint64_t main_time = 0;
 
+void EnsureParentDirectory(const std::string& path) {
+    const std::size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) {
+        return;
+    }
+    top_ensure_directory(path.substr(0, slash));
+}
+
 } // namespace
 
 double sc_time_stamp() {
@@ -41,8 +49,11 @@ extern "C" void veer_cosim_init(const char *elf_path) {
         std::cerr << "failed to initialize cosim bridge" << std::endl;
     }
 
+    const std::string mon_log_path =
+        top_env_string("VEER_EL2_MON_LOG", "log/veer_el2_mon.log");
+    EnsureParentDirectory(mon_log_path);
     mon_instr_init_mode(
-        top_env_string("VEER_EL2_MON_LOG", "log/veer_el2_mon.log").c_str(),
+        mon_log_path.c_str(),
         static_cast<uint32_t>(MonInstrCompareMode::Retire));
 }
 

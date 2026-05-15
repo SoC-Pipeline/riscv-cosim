@@ -35,7 +35,6 @@ set_default PK_PREFIX "$BUILD_DIR/pk"
 set_default FIRMWARE_BUILD_DIR "$BUILD_DIR/firmware"
 set_default SRC_BUILD_DIR "$BUILD_DIR/src"
 set_default TOP_BUILD_DIR "$SRC_BUILD_DIR/top_cpu"
-set_default COSIM_BUILD_DIR "$SRC_BUILD_DIR/cosim"
 set_default IBEX_BUILD_ROOT "$TOP_BUILD_DIR/ibex"
 set_default IBEX_BUILD_STAMP "$IBEX_BUILD_ROOT/build.stamp"
 set_default VEER_EL2_BUILD_ROOT "$TOP_BUILD_DIR/veer_el2"
@@ -48,9 +47,7 @@ set_default VEER_EL2_SPIKE_DTS "$VEER_EL2_BUILD_ROOT/spike_veer_el2.dts"
 set_default VEER_EL2_SPIKE_DTB "$VEER_EL2_BUILD_ROOT/spike_veer_el2.dtb"
 set_default LOG_DIR "$TB_HOME/log"
 set_default DUMP_DIR "$LOG_DIR"
-set_default VPI_MODULE_DIR "$COSIM_BUILD_DIR"
-set_default VPI_STAMP "$COSIM_BUILD_DIR/vpi.stamp"
-set_default SIM_VVP "$TOP_BUILD_DIR/tb_picorv32.vvp"
+set_default PICORV32_SIM_EXE "$TOP_BUILD_DIR/picorv32/obj_dir/Vtb_picorv32"
 set_default PICORV32_TOP_STAMP "$TOP_BUILD_DIR/picorv32_top.stamp"
 
 set_default RISCV_ROOT "${RISCV:-${RISCV_PATH:-${RISCV_TOOLCHAIN:-${RISCV_GNU_TOOLCHAIN_INSTALL_PREFIX:-}}}}"
@@ -76,7 +73,6 @@ set_default IBEX_RAM_BASE 2147483648
 set_default PICORV32_COSIM_LOG "$LOG_DIR/picorv32_cosim_result.log"
 set_default PICORV32_SPIKE_COMMIT_LOG "$LOG_DIR/picorv32_spike_commit.log"
 set_default PICORV32_MON_LOG "$LOG_DIR/picorv32_mon.log"
-set_default PICORV32_COSIM_IF vpi
 set_default IBEX_COSIM_LOG "$LOG_DIR/ibex_cosim_result.log"
 set_default IBEX_SPIKE_COMMIT_LOG "$LOG_DIR/ibex_spike_commit.log"
 set_default IBEX_TRACE_FILE_BASE "$LOG_DIR/trace_core"
@@ -94,8 +90,6 @@ set_default FIRMWARE_CASES "hello pico_test mem"
 
 set_default PYTHON python3
 set_default CXX g++
-set_default IVERILOG "iverilog${ICARUS_SUFFIX:-}"
-set_default VVP "vvp${ICARUS_SUFFIX:-}"
 set_default FUSESOC fusesoc
 set_default PKG_CONFIG pkg-config
 set_default BUILD_JOBS 8
@@ -107,10 +101,6 @@ SPIKE_INCLUDE_DIRS=(
 	"$SPIKE_ROOT/include/fesvr"
 	"$SPIKE_ROOT/include/softfloat"
 )
-VPI_INCLUDE_DIRS=()
-for dir in /usr/include/iverilog /usr/local/include/iverilog /usr/share/verilator/include/vltstd /usr/local/share/verilator/include/vltstd; do
-	[[ -d "$dir" ]] && VPI_INCLUDE_DIRS+=("$dir")
-done
 
 usage() {
 	cat <<'EOF'
@@ -157,7 +147,7 @@ Frequently used environment overrides:
                       Default: 0
 
 Tool overrides:
-  TOOLCHAIN_PREFIX, PYTHON, CXX, IVERILOG, VVP, FUSESOC, PKG_CONFIG
+  TOOLCHAIN_PREFIX, PYTHON, CXX, FUSESOC, PKG_CONFIG
 
 Usage:
   ./build.sh <command> [args]
@@ -165,7 +155,7 @@ Usage:
 Common flows:
   ./build.sh build spike
       Build the shared local dependencies:
-        build/spike, build/pk, build/src/cosim/libspike.vpi
+        build/spike, build/pk
 
   ./build.sh build firmware [case|all]
       Build firmware ELF/HEX artifacts under build/firmware/<case>/obj.
@@ -553,31 +543,12 @@ pk_ready() {
 	[[ -x "$MY_PK_PATH" ]]
 }
 
-vpi_ready() {
-	[[ -f "$VPI_MODULE_DIR/libspike.vpi" && -f "$VPI_STAMP" ]] &&
-		[[ "$(cat "$VPI_STAMP")" == "$(vpi_stamp)" ]]
-}
-
 ibex_spike_pkg_config_ready() {
 	[[ -f "$SPIKE_PREFIX/lib/pkgconfig/riscv-fdt.pc" ]]
 }
 
 spike_deps_ready() {
-	spike_ready && spike_cosim_api_ready && pk_ready && vpi_ready && ibex_spike_pkg_config_ready
-}
-
-vpi_stamp() {
-	cksum \
-		"$COSIM_SRC_DIR/spike_dpi.cc" \
-		"$COSIM_SRC_DIR/cosim_bridge.cc" \
-		"$COSIM_SRC_DIR/cosim_session.cc" \
-		"$COSIM_SRC_DIR/cosim_config_policy.cc" \
-		"$COSIM_SRC_DIR/simulator_factory.cc" \
-		"$COSIM_SRC_DIR/elf_utils.cc" \
-		"$COSIM_SRC_DIR/spike_simulator.cc" \
-		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
-		"$MON_SRC_DIR/mon_instr/mon_instr.h" \
-		"$MON_SRC_DIR/mon_instr/txn_instr.h"
+	spike_ready && spike_cosim_api_ready && pk_ready && ibex_spike_pkg_config_ready
 }
 
 firmware_ready() {
@@ -594,43 +565,26 @@ veer_firmware_ready() {
 }
 
 picorv32_top_ready() {
-	[[ -f "$SIM_VVP" && -f "$PICORV32_TOP_STAMP" ]] &&
+	[[ -x "$PICORV32_SIM_EXE" && -f "$PICORV32_TOP_STAMP" ]] &&
 		[[ "$(cat "$PICORV32_TOP_STAMP")" == "$(picorv32_top_stamp)" ]]
 }
 
-picorv32_use_dpi() {
-	[[ "${PICORV32_COSIM_IF,,}" == "dpi" ]]
-}
-
-check_picorv32_cosim_if() {
-	local mode="${PICORV32_COSIM_IF,,}"
-	case "$mode" in
-		vpi)
-			return 0
-			;;
-		dpi)
-			printf 'error: PICORV32_COSIM_IF=dpi is not supported on the current iverilog/vvp flow.\n' >&2
-			printf '       keep PICORV32_COSIM_IF=vpi for picorv32 runs.\n' >&2
-			return 1
-			;;
-		*)
-			printf 'error: unsupported PICORV32_COSIM_IF=%s (expected: vpi or dpi)\n' "$PICORV32_COSIM_IF" >&2
-			return 1
-			;;
-	esac
-}
-
 picorv32_top_stamp() {
-	printf 'RESET_VECTOR=%s\nPICORV32_COSIM_IF=%s\n' \
-		"$(printf '0x%08x' "$(parse_uint32 "$RESET_VECTOR")")" \
-		"${PICORV32_COSIM_IF,,}"
+	printf 'RESET_VECTOR=%s\n' \
+		"$(printf '0x%08x' "$(parse_uint32 "$RESET_VECTOR")")"
 	cksum \
 		"$SRC_TOP_DIR/tb_picorv32.v" \
+		"$SRC_TOP_DIR/tb_picorv32_cosim.cc" \
+		"$SRC_TOP_DIR/cosim_top_utils.cc" \
 		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
 		"$MON_SRC_DIR/mon_instr/mon_instr.h" \
 		"$MON_SRC_DIR/mon_instr/txn_instr.h" \
-		"$COSIM_SRC_DIR/spike_dpi.cc" \
+		"$COSIM_SRC_DIR/cosim_bridge.cc" \
 		"$COSIM_SRC_DIR/cosim_session.cc" \
+		"$COSIM_SRC_DIR/cosim_config_policy.cc" \
+		"$COSIM_SRC_DIR/simulator_factory.cc" \
+		"$COSIM_SRC_DIR/elf_utils.cc" \
+		"$COSIM_SRC_DIR/spike_simulator.cc" \
 		"$PICORV32_RTL"
 }
 
@@ -756,55 +710,6 @@ deps() {
 	pk
 }
 
-vpi() {
-	require_command "$PKG_CONFIG"
-	mkdir -p "$VPI_MODULE_DIR"
-	local include_args=()
-	local dir
-	local cosim_sources=(
-		"$COSIM_SRC_DIR/spike_dpi.cc"
-		"$COSIM_SRC_DIR/cosim_bridge.cc"
-		"$COSIM_SRC_DIR/cosim_session.cc"
-		"$COSIM_SRC_DIR/cosim_config_policy.cc"
-		"$COSIM_SRC_DIR/simulator_factory.cc"
-		"$COSIM_SRC_DIR/elf_utils.cc"
-		"$COSIM_SRC_DIR/spike_simulator.cc"
-		"$MON_SRC_DIR/mon_instr/mon_instr.cc"
-	)
-	include_args+=("-I$COSIM_SRC_DIR")
-	include_args+=("-I$MON_SRC_DIR/mon_instr")
-	for dir in "${SPIKE_INCLUDE_DIRS[@]}" "${VPI_INCLUDE_DIRS[@]}"; do
-		[[ -n "$dir" ]] && include_args+=("-I$dir")
-	done
-
-	local spike_pc_libs
-	spike_pc_libs="$(
-		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
-			"$PKG_CONFIG" --libs riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
-	)"
-	read -r -a spike_lib_args <<< "$spike_pc_libs"
-
-	"$CXX" "${cosim_sources[@]}" -o "$VPI_MODULE_DIR/libspike.so" \
-		-fPIC -shared -std=c++20 -include sys/syscall.h \
-		"${include_args[@]}" \
-		-L"$SPIKE_LIB_DIR" \
-		-Wl,--start-group "${spike_lib_args[@]}" -Wl,--end-group \
-		-lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl \
-		-Wl,-rpath="$SPIKE_LIB_DIR" \
-		-DVPI_WRAPPER
-	cp "$VPI_MODULE_DIR/libspike.so" "$VPI_MODULE_DIR/libspike.vpi"
-
-	"$CXX" "${cosim_sources[@]}" -o "$VPI_MODULE_DIR/libspike_dpi.so" \
-		-fPIC -shared -std=c++20 -include sys/syscall.h \
-		"${include_args[@]}" \
-		-L"$SPIKE_LIB_DIR" \
-		-Wl,--start-group "${spike_lib_args[@]}" -Wl,--end-group \
-		-lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl \
-		-Wl,-rpath="$SPIKE_LIB_DIR" \
-		-DDPI_WRAPPER
-	vpi_stamp > "$VPI_STAMP"
-}
-
 build_spike_deps() {
 	if spike_ready; then
 		install_riscv_fdt_pc
@@ -821,7 +726,6 @@ build_spike_deps() {
 	if ! pk_ready; then
 		pk
 	fi
-	vpi
 }
 
 ensure_spike_deps() {
@@ -852,15 +756,49 @@ ensure_veer_firmware_case() {
 }
 
 build_picorv32_top() {
-	check_picorv32_cosim_if
 	ensure_spike_deps
-	require_file "$VPI_MODULE_DIR/libspike.vpi"
 	require_file "$PICORV32_RTL"
-	mkdir -p "$TOP_BUILD_DIR"
+	require_command verilator
+	require_command "$PKG_CONFIG"
+	local picorv32_build_dir="$TOP_BUILD_DIR/picorv32"
+	mkdir -p "$picorv32_build_dir"
 
-	"$IVERILOG" -g2012 -o "$SIM_VVP" "$SRC_TOP_DIR/tb_picorv32.v" "$PICORV32_RTL" \
-		-DVPI_WRAPPER -DCOMPRESSED_ISA -DRISCV_FORMAL \
-		-P"tb_picorv32.RESET_VECTOR=$(parse_uint32 "$RESET_VECTOR")"
+	local spike_pc_cflags spike_pc_libs
+	spike_pc_cflags="$(
+		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+			"$PKG_CONFIG" --cflags riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
+	)"
+	spike_pc_libs="$(
+		PKG_CONFIG_PATH="$SPIKE_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+			"$PKG_CONFIG" --libs riscv-riscv riscv-disasm riscv-fdt riscv-fesvr
+	)"
+
+	verilator --cc --exe --build \
+		-Mdir "$picorv32_build_dir/obj_dir" \
+		--top-module tb_picorv32 \
+		--timing \
+		--trace \
+		-Wno-fatal \
+		-Wno-PINMISSING \
+		-Wno-WIDTHTRUNC \
+		-Wno-INITIALDLY \
+		-I"$SRC_TOP_DIR" \
+		-CFLAGS "-std=c++20 -I$COSIM_SRC_DIR -I$MON_SRC_DIR/mon_instr -I$SRC_TOP_DIR -include sys/syscall.h $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
+		-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
+		-MAKEFLAGS "OBJCACHE=" \
+		"$SRC_TOP_DIR/tb_picorv32.v" \
+		"$PICORV32_RTL" \
+		"$SRC_TOP_DIR/tb_picorv32_cosim.cc" \
+		"$SRC_TOP_DIR/cosim_top_utils.cc" \
+		"$COSIM_SRC_DIR/cosim_bridge.cc" \
+		"$COSIM_SRC_DIR/cosim_session.cc" \
+		"$COSIM_SRC_DIR/cosim_config_policy.cc" \
+		"$COSIM_SRC_DIR/simulator_factory.cc" \
+		"$COSIM_SRC_DIR/elf_utils.cc" \
+		"$COSIM_SRC_DIR/spike_simulator.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
+		-DCOMPRESSED_ISA -DRISCV_FORMAL \
+		-GRESET_VECTOR="$(parse_uint32 "$RESET_VECTOR")"
 	picorv32_top_stamp > "$PICORV32_TOP_STAMP"
 }
 
@@ -872,23 +810,21 @@ ensure_picorv32_top() {
 }
 
 sim_picorv32() {
-	check_picorv32_cosim_if
 	local elf_path="$1"
 	local hex_path="$2"
 	require_file "$elf_path"
 	require_file "$hex_path"
-	require_file "$VPI_MODULE_DIR/libspike.vpi"
-	require_file "$SIM_VVP"
+	require_file "$PICORV32_SIM_EXE"
 	mkdir -p "$DUMP_DIR" "$(dirname "$PICORV32_COSIM_LOG")" "$(dirname "$PICORV32_SPIKE_COMMIT_LOG")" "$(dirname "$PICORV32_MON_LOG")"
 	LD_LIBRARY_PATH="$SPIKE_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 		PICORV32_COSIM_LOG="$PICORV32_COSIM_LOG" \
 		PICORV32_SPIKE_COMMIT_LOG="$PICORV32_SPIKE_COMMIT_LOG" \
 		PICORV32_MON_LOG="$PICORV32_MON_LOG" \
-		MY_PK_PATH="$MY_PK_PATH" "$VVP" -M "$VPI_MODULE_DIR" -m libspike "$SIM_VVP" +trace \
+		TEST_ELF="$elf_path" \
+		MY_PK_PATH="$MY_PK_PATH" \
+		"$PICORV32_SIM_EXE" +trace \
 		"+ELF_PATH=$elf_path" \
-		"+firmware=$hex_path" \
-		"+PK_PATH=$MY_PK_PATH" \
-		"+ISA=$MY_ISA"
+		"+firmware=$hex_path"
 }
 
 check_ibex_pkg_config() {
