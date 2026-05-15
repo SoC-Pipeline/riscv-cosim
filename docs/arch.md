@@ -83,12 +83,17 @@ The first-stage PicoRV32 monitor check covers retired PC and the single architec
 firmware.elf
   -> Ibex simple-system RAM load
   -> ibex_top_tracing retire/checker signals
+  -> project-local monitor transaction log
   -> upstream-style riscv_cosim_* DPI calls
   -> local compatibility wrapper
   -> CosimSession
 ```
 
-The Ibex target keeps compatibility with the upstream Ibex DPI checker surface while adapting it to the project `CosimSession` implementation.
+The Ibex target keeps compatibility with the upstream Ibex DPI checker surface
+while adapting it to the project `CosimSession` implementation. The local
+monitor path runs in parallel and writes `MonInstrTxn` log entries from RVFI
+retire fields, but the existing Ibex checker remains the authoritative compare
+path for retire, interrupt/debug, and dside synchronization.
 
 ### VeeR EL2
 
@@ -96,11 +101,26 @@ The Ibex target keeps compatibility with the upstream Ibex DPI checker surface w
 firmware.elf + firmware_veer.hex
   -> upstream VeeR EL2 tb_top memory load
   -> project monitor observes trace_rv_i_* retire signals
+  -> MonInstrTxn log + retire compare
   -> Verilator DPI adapter
   -> CosimSession
 ```
 
-The project monitor binds into the upstream VeeR testbench without modifying vendor RTL for the cosim path.
+The project monitor binds into the upstream VeeR testbench without modifying
+vendor RTL for the cosim path. The first-stage VeeR monitor uses only the
+public trace retire interface together with writeback mirrors already exposed by
+the upstream `tb_top` testbench. The current monitor packet includes:
+
+- retire PC/instruction from `trace_rv_i_*`
+- trap indication from `trace_rv_i_exception_ip | trace_rv_i_interrupt_ip`
+- GPR writeback from `tb_top.wb_valid/wb_dest/wb_data`
+- CSR writeback log fields from `tb_top.wb_csr_valid/wb_csr_dest/wb_csr_data`
+
+Only `pc/instr` are currently used for VeeR compare in `Retire` mode. GPR and
+CSR resources are logged for debug and parity with the shared monitor schema,
+but they do not yet drive compare failures. In particular, the VeeR CSR path is
+write-only logging today; it does not provide the RVFI-style CSR read mask/data
+needed for full CSR semantic compare.
 
 ## Cosim Layering
 
@@ -191,7 +211,7 @@ firmware/common/firmware.mk   reusable firmware build rules
 firmware/<case>/main.c        case-specific self-check
 ```
 
-The default shared cases are `hello`, `pico_test`, and `mem`. Each case reports success through `sim_pass()` and failure through `sim_fail()`. PicoRV32-specific monitor validation can add target-focused cases such as `pico_csr` without changing the default cross-target `all` matrix.
+The default shared cases are `hello`, `pico_test`, and `mem`. Each case reports success through `sim_pass()` and failure through `sim_fail()`.
 
 ### CPU Mode Loading
 
@@ -255,6 +275,8 @@ log/run_<target>_<case>.log              target stdout/stderr capture
 log/<target>_cosim_result.log            retire compare result log
 log/<target>_spike_commit.log            Spike commit log when enabled
 log/picorv32_mon.log                     PicoRV32 RVFI monitor packet log
+log/ibex_mon.log                         Ibex RVFI monitor packet log
+log/veer_el2_mon.log                     VeeR EL2 monitor packet log
 log/run_soc_spike_<case>.log             SoC-mode stdout/stderr capture
 log/soc_spike_<case>_commit.log          SoC-mode Spike commit log
 ```

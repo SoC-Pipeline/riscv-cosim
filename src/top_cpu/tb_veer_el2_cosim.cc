@@ -1,6 +1,7 @@
 #include "cosim_bridge.h"
 #include "cosim_config_policy.h"
 #include "cosim_top_utils.h"
+#include "mon_instr.h"
 
 #include "Vtb_top.h"
 #include "verilated.h"
@@ -39,13 +40,34 @@ extern "C" void veer_cosim_init(const char *elf_path) {
     if (cosim_bridge_init(&config) != 0) {
         std::cerr << "failed to initialize cosim bridge" << std::endl;
     }
+
+    mon_instr_init_mode(
+        top_env_string("VEER_EL2_MON_LOG", "log/veer_el2_mon.log").c_str(),
+        static_cast<uint32_t>(MonInstrCompareMode::Retire));
 }
 
-extern "C" void veer_cosim_retire(unsigned pc, unsigned instr) {
-    (void)cosim_bridge_retire(pc, instr);
+extern "C" void veer_cosim_retire(unsigned pc, unsigned instr, unsigned char trap,
+                                  unsigned char gpr_valid, unsigned rd_addr,
+                                  unsigned rd_wdata, unsigned char csr_valid,
+                                  unsigned csr_addr, unsigned csr_wdata) {
+    static uint32_t retire_order = 0;
+    MonInstrTxn txn;
+    txn.order = retire_order++;
+    txn.pc = pc;
+    txn.instr = instr;
+    txn.trap = trap != 0;
+    txn.gpr.valid = gpr_valid != 0;
+    txn.gpr.addr = rd_addr;
+    txn.gpr.data = rd_wdata;
+    txn.csr.valid = csr_valid != 0;
+    txn.csr.addr = csr_addr;
+    txn.csr.wmask = txn.csr.valid ? 0x00000000ffffffffull : 0;
+    txn.csr.wdata = csr_wdata;
+    (void)mon_instr_retire(&txn);
 }
 
 extern "C" void veer_cosim_finish() {
+    mon_instr_finish();
     (void)cosim_bridge_finish();
 }
 
@@ -103,7 +125,7 @@ int main(int argc, char **argv) {
 
     if (!Verilated::gotFinish()) {
         std::cerr << "\nVeeR EL2 VerilatorTB: hit max cycle count " << max_cycles << std::endl;
-        (void)cosim_bridge_finish();
+        veer_cosim_finish();
         delete tb;
         return EXIT_FAILURE;
     }
@@ -121,6 +143,7 @@ int main(int argc, char **argv) {
 
     std::cout << "\nVeeR EL2 VerilatorTB: End of sim" << std::endl;
     const int rc = veer_cosim_fail_count() == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    mon_instr_reset();
     cosim_bridge_reset();
     return rc;
 }

@@ -81,6 +81,7 @@ set_default IBEX_COSIM_LOG "$LOG_DIR/ibex_cosim_result.log"
 set_default IBEX_SPIKE_COMMIT_LOG "$LOG_DIR/ibex_spike_commit.log"
 set_default IBEX_TRACE_FILE_BASE "$LOG_DIR/trace_core"
 set_default IBEX_SIMPLE_SYSTEM_LOG "$LOG_DIR/ibex_simple_system.log"
+set_default IBEX_MON_LOG "$LOG_DIR/ibex_mon.log"
 set_default IBEX_PCOUNT_CSV "$LOG_DIR/tb_ibex_pcount.csv"
 set_default IBEX_VERILATOR_VERSION 5.010
 set_default VEER_EL2_RAM_BASE 0x80000000
@@ -88,6 +89,7 @@ set_default VEER_EL2_RAM_SIZE 0x00020000
 set_default VEER_EL2_MAX_CYCLES 2000000
 set_default VEER_EL2_COSIM_LOG "$LOG_DIR/veer_el2_cosim_result.log"
 set_default VEER_EL2_SPIKE_COMMIT_LOG "$LOG_DIR/veer_el2_spike_commit.log"
+set_default VEER_EL2_MON_LOG "$LOG_DIR/veer_el2_mon.log"
 set_default FIRMWARE_CASES "hello pico_test mem"
 
 set_default PYTHON python3
@@ -139,6 +141,7 @@ Frequently used environment overrides:
   IBEX_SPIKE_COMMIT_LOG
                       Ibex Spike commit log. Default: log/ibex_spike_commit.log
   IBEX_COSIM_LOG      Ibex cosim compare log. Default: log/ibex_cosim_result.log
+  IBEX_MON_LOG        Ibex monitor log. Default: log/ibex_mon.log
   IBEX_VERILATOR_VERSION
                       Expected Ibex Verilator version. Default: 5.010
                       Set to "any" to skip the exact-version guard.
@@ -147,6 +150,7 @@ Frequently used environment overrides:
   VEER_EL2_COSIM_LOG  VeeR EL2 cosim compare log. Default: log/veer_el2_cosim_result.log
   VEER_EL2_SPIKE_COMMIT_LOG
                       VeeR EL2 Spike commit log. Default: log/veer_el2_spike_commit.log
+  VEER_EL2_MON_LOG    VeeR EL2 monitor log. Default: log/veer_el2_mon.log
   VEER_EL2_SPIKE_DTB  Prebuilt DTB used by Spike for VeeR cosim.
                       Default: build/src/top_cpu/veer_el2/spike_veer_el2.dtb
   SOC_SPIKE_VERBOSE   Enable verbose SoC Spike debug prints (entry/step logs).
@@ -183,7 +187,7 @@ Selectors:
   mode:   cpu, soc, all
   cpu target: picorv32, ibex, veer_el2, all
   soc target: picorv32, all
-  case:   hello, pico_test, mem, pico_csr, all
+  case:   hello, pico_test, mem, all
 
 Examples:
   ./build.sh
@@ -647,6 +651,9 @@ ibex_build_stamp() {
 		"$SRC_TOP_DIR/tb_ibex_cosim.cc" \
 		"$SRC_TOP_DIR/tb_ibex_cosim.core" \
 		"$SRC_TOP_DIR/tb_ibex_cosim_bind.sv" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.h" \
+		"$MON_SRC_DIR/mon_instr/txn_instr.h" \
 		"$COSIM_SRC_DIR/cosim_session.cc" \
 		"$COSIM_SRC_DIR/elf_utils.cc" \
 		"$COSIM_SRC_DIR/spike_simulator.cc"
@@ -666,6 +673,9 @@ veer_el2_build_stamp() {
 	cksum \
 		"$SRC_TOP_DIR/tb_veer_el2.sv" \
 		"$SRC_TOP_DIR/tb_veer_el2_cosim.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
+		"$MON_SRC_DIR/mon_instr/mon_instr.h" \
+		"$MON_SRC_DIR/mon_instr/txn_instr.h" \
 		"$COSIM_SRC_DIR/cosim_session.cc" \
 		"$COSIM_SRC_DIR/elf_utils.cc" \
 		"$COSIM_SRC_DIR/spike_simulator.cc"
@@ -1098,7 +1108,7 @@ build_veer_el2_top() {
 		cd "$VEER_EL2_BUILD_ROOT"
 		export RV_ROOT="$VEER_EL2_DIR"
 		verilator --cc \
-			-CFLAGS "-std=c++20 -include sys/syscall.h -I$COSIM_SRC_DIR -I$SRC_TOP_DIR $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
+			-CFLAGS "-std=c++20 -include sys/syscall.h -I$COSIM_SRC_DIR -I$SRC_TOP_DIR -I$MON_SRC_DIR/mon_instr $spike_pc_cflags -I$SPIKE_ROOT/include/riscv -I$SPIKE_ROOT/include/fesvr" \
 			-LDFLAGS "-Wl,--start-group $spike_pc_libs -Wl,--end-group -lboost_regex -lboost_system -lpthread -lgmp -lmpfr -lmpc -ldl" \
 			+define+RV_OPENSOURCE \
 			-I"$SRC_TOP_DIR" \
@@ -1126,6 +1136,7 @@ build_veer_el2_top() {
 			"$SRC_TOP_DIR/tb_veer_el2.sv" \
 			"$SRC_TOP_DIR/tb_veer_el2_cosim.cc" \
 			"$SRC_TOP_DIR/cosim_top_utils.cc" \
+			"$MON_SRC_DIR/mon_instr/mon_instr.cc" \
 			"$COSIM_SRC_DIR/cosim_bridge.cc" \
 			"$COSIM_SRC_DIR/cosim_session.cc" \
 		"$COSIM_SRC_DIR/cosim_config_policy.cc" \

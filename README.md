@@ -91,7 +91,7 @@ export RESET_VECTOR=0x80000080
 export FIRMWARE_CASES="hello pico_test mem"
 ```
 
-`hello`, `pico_test`, and `mem` remain the default shared cases for `./build.sh all`. Target-specific debug or monitor cases, such as PicoRV32-only `pico_csr`, can still be run directly with `./build.sh run cpu picorv32 pico_csr`.
+`hello`, `pico_test`, and `mem` remain the shared supported cases for `./build.sh all`.
 
 ## Outputs
 

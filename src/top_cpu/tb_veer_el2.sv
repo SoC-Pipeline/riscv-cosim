@@ -1,6 +1,14 @@
 module tb_veer_el2_monitor;
   import "DPI-C" function void veer_cosim_init(input string elf_path);
-  import "DPI-C" function void veer_cosim_retire(input int unsigned pc, input int unsigned instr);
+  import "DPI-C" function void veer_cosim_retire(input int unsigned pc,
+                                                 input int unsigned instr,
+                                                 input bit trap,
+                                                 input bit gpr_valid,
+                                                 input int unsigned rd_addr,
+                                                 input int unsigned rd_wdata,
+                                                 input bit csr_valid,
+                                                 input int unsigned csr_addr,
+                                                 input int unsigned csr_wdata);
   import "DPI-C" function void veer_cosim_finish();
   import "DPI-C" function int unsigned veer_cosim_fail_count();
 
@@ -67,10 +75,17 @@ module tb_veer_el2_monitor;
     cosim_ready = 1'b1;
   end
 
-  task automatic report_retire(input logic [31:0] pc, input logic [31:0] instr);
+  task automatic report_retire(input logic [31:0] pc, input logic [31:0] instr,
+                               input logic trap, input logic gpr_valid,
+                               input logic [4:0] rd_addr,
+                               input logic [31:0] rd_wdata,
+                               input logic csr_valid,
+                               input logic [11:0] csr_addr,
+                               input logic [31:0] csr_wdata);
     if (!has_last_retire || last_retire_time != $time ||
         last_retire_pc != pc || last_retire_instr != instr) begin
-      veer_cosim_retire(pc, instr);
+      veer_cosim_retire(pc, instr, trap, gpr_valid, {27'b0, rd_addr}, rd_wdata,
+                        csr_valid, {20'b0, csr_addr}, csr_wdata);
       last_retire_pc = pc;
       last_retire_instr = instr;
       last_retire_time = $time;
@@ -120,7 +135,15 @@ module tb_veer_el2_monitor;
     if (cosim_ready && !cosim_finished &&
         tb_top.trace_rv_i_valid_ip &&
         dut_trace_known) begin
-      report_retire(tb_top.trace_rv_i_address_ip, tb_top.trace_rv_i_insn_ip);
+      report_retire(tb_top.trace_rv_i_address_ip, tb_top.trace_rv_i_insn_ip,
+                    tb_top.trace_rv_i_exception_ip |
+                    tb_top.trace_rv_i_interrupt_ip,
+                    tb_top.wb_valid && (tb_top.wb_dest != 5'd0),
+                    tb_top.wb_dest,
+                    tb_top.wb_data,
+                    tb_top.wb_csr_valid,
+                    tb_top.wb_csr_dest,
+                    tb_top.wb_csr_data);
     end
   end
 

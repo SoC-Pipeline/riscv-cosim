@@ -17,10 +17,23 @@ const char* cstr_or_default(const char* value, const char* default_value)
     return value && value[0] != '\0' ? value : default_value;
 }
 
+MonInstrCompareMode compare_mode_from_u32(uint32_t mode)
+{
+    switch (mode) {
+    case static_cast<uint32_t>(MonInstrCompareMode::Retire):
+        return MonInstrCompareMode::Retire;
+    case static_cast<uint32_t>(MonInstrCompareMode::LogOnly):
+        return MonInstrCompareMode::LogOnly;
+    case static_cast<uint32_t>(MonInstrCompareMode::Detail):
+    default:
+        return MonInstrCompareMode::Detail;
+    }
+}
+
 } // namespace
 
-MonInstr::MonInstr(std::string log_path)
-    : log_path_(std::move(log_path))
+MonInstr::MonInstr(std::string log_path, MonInstrCompareMode compare_mode)
+    : log_path_(std::move(log_path)), compare_mode_(compare_mode)
 {
     ensure_log_open();
 }
@@ -32,9 +45,20 @@ MonInstr::~MonInstr()
 
 bool MonInstr::retire(const MonInstrTxn& txn)
 {
-    const int rc = cosim_bridge_step_detail_with_csr(
-        txn.gpr.valid ? txn.gpr.addr : 0, txn.gpr.valid ? txn.gpr.data : 0, txn.pc,
-        txn.trap ? 1 : 0, 0, txn.csr.valid ? 1 : 0, txn.csr.addr, txn.csr.rmask, txn.csr.rdata);
+    int rc = 0;
+    switch (compare_mode_) {
+    case MonInstrCompareMode::Detail:
+        rc = cosim_bridge_step_detail_with_csr(
+            txn.gpr.valid ? txn.gpr.addr : 0, txn.gpr.valid ? txn.gpr.data : 0, txn.pc,
+            txn.trap ? 1 : 0, 0, txn.csr.valid ? 1 : 0, txn.csr.addr, txn.csr.rmask, txn.csr.rdata);
+        break;
+    case MonInstrCompareMode::Retire:
+        rc = cosim_bridge_retire(txn.pc, txn.instr);
+        break;
+    case MonInstrCompareMode::LogOnly:
+        rc = 0;
+        break;
+    }
     log_retire(txn, rc);
     ++retire_count_;
     return rc == 0;
@@ -66,6 +90,9 @@ void MonInstr::log_retire(const MonInstrTxn& txn, int rc)
         return;
     }
 
+    const char* result = compare_mode_ == MonInstrCompareMode::LogOnly ? "LOG" :
+                         (rc == 0 ? "PASS" : "FAIL");
+
     log_ << std::dec << retire_count_
          << "," << txn.order
          << ",0x" << std::hex << std::setw(8) << std::setfill('0') << txn.pc
@@ -86,7 +113,7 @@ void MonInstr::log_retire(const MonInstrTxn& txn, int rc)
          << ",0x" << std::setw(16) << txn.csr.rdata
          << ",0x" << std::setw(16) << txn.csr.wmask
          << ",0x" << std::setw(16) << txn.csr.wdata
-         << "," << (rc == 0 ? "PASS" : "FAIL")
+         << "," << result
          << std::dec << std::setfill(' ') << "\n";
 }
 
@@ -94,7 +121,14 @@ extern "C" {
 
 void mon_instr_init(const char* log_path)
 {
-    g_monitor = std::make_unique<MonInstr>(cstr_or_default(log_path, "log/picorv32_mon.log"));
+    mon_instr_init_mode(log_path, static_cast<uint32_t>(MonInstrCompareMode::Detail));
+}
+
+void mon_instr_init_mode(const char* log_path, uint32_t compare_mode)
+{
+    g_monitor = std::make_unique<MonInstr>(
+        cstr_or_default(log_path, "log/picorv32_mon.log"),
+        compare_mode_from_u32(compare_mode));
 }
 
 int mon_instr_retire(const MonInstrTxn* txn)
@@ -103,6 +137,20 @@ int mon_instr_retire(const MonInstrTxn* txn)
         return -1;
     }
     return g_monitor->retire(*txn) ? 0 : -2;
+}
+
+int mon_instr_retire_simple(uint32_t order, uint32_t pc, uint32_t instr, int trap,
+                            int gpr_valid, uint32_t rd_addr, uint32_t rd_wdata)
+{
+    MonInstrTxn txn;
+    txn.order = order;
+    txn.pc = pc;
+    txn.instr = instr;
+    txn.trap = trap != 0;
+    txn.gpr.valid = gpr_valid != 0;
+    txn.gpr.addr = rd_addr;
+    txn.gpr.data = rd_wdata;
+    return mon_instr_retire(&txn);
 }
 
 void mon_instr_finish()

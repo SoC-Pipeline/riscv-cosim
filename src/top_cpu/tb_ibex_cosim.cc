@@ -23,6 +23,7 @@
 #include "cosim_top_utils.h"
 #include "cosim.h"
 #include "ibex_pcounts.h"
+#include "mon_instr.h"
 #include "verilated_toplevel.h"
 #include "verilator_memutil.h"
 #include "verilator_sim_ctrl.h"
@@ -278,6 +279,22 @@ void create_cosim(svBit secure_ibex, svBit icache_en,
                              pmp_granularity[0], mhpm_counter_num[0],
                              dm_start_addr[0], dm_end_addr[0]);
 }
+
+void ibex_mon_init() {
+  mon_instr_init_mode(
+      top_env_string("IBEX_MON_LOG", "log/ibex_mon.log").c_str(),
+      static_cast<uint32_t>(MonInstrCompareMode::LogOnly));
+}
+
+int ibex_mon_retire(uint32_t order, uint32_t pc, uint32_t instr, svBit trap,
+                    svBit gpr_valid, uint32_t rd_addr, uint32_t rd_wdata) {
+  return mon_instr_retire_simple(order, pc, instr, trap != 0, gpr_valid != 0,
+                                 rd_addr, rd_wdata);
+}
+
+void ibex_mon_finish() {
+  mon_instr_finish();
+}
 }
 
 int main(int argc, char **argv) {
@@ -285,6 +302,7 @@ int main(int argc, char **argv) {
 
   int ret_code = tb_ibex_cosim->Main(argc, argv);
 
+  mon_instr_reset();
   delete tb_ibex_cosim;
   tb_ibex_cosim = nullptr;
 
