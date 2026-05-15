@@ -1,15 +1,24 @@
 # RISC-V Co-Simulation
 
-This repository builds firmware and runs RISC-V co-simulation flows for:
-- CPU retire-compare mode: `picorv32`, `ibex`, `veer_el2`
-- SoC bus-driven mode (CPU-less shell): `soc/picorv32`
+This repository builds small RISC-V firmware cases and runs two validation flows:
 
-## require
+- CPU retire-compare mode for `picorv32`, `ibex`, and `veer_el2`
+- SoC bus-driven mode for `soc/picorv32`, where Spike replaces the CPU slot and accesses PicoSoC devices through the SoC bus
 
-1. [riscv-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
-1. [elf2hex](https://github.com/sifive/elf2hex)
+## Repository Layout
 
-## Repository Overview
+```text
+build.sh        Build/run entry point. Use ./build.sh help for the command matrix.
+src/top_cpu/    CPU-mode testbenches and target-specific cosim adapters.
+src/top_soc/    PicoSoC-based SoC mode, Spike bus master, and SoC testbench.
+src/cosim/      Shared C++ cosim bridge, CosimSession, and Spike backend.
+firmware/       Self-checking firmware cases plus shared startup/runtime code.
+scripts/        Build-time helper scripts.
+external/       Vendor dependencies: PicoRV32, Ibex, Spike, pk, VeeR EL2.
+build/          Generated firmware, dependency builds, and simulator outputs.
+log/            Run logs, compare logs, and Spike commit logs.
+docs/arch.md    Architecture, data flow, firmware loading, and protocol details.
+```
 
 ```text
                  +-----------------------------+
@@ -26,14 +35,14 @@ This repository builds firmware and runs RISC-V co-simulation flows for:
           +----------------+         +----------------+
           v                                       v
 +---------+----------------------+    +------------+-------------+
-| CPU Cosim Targets              |    | SoC Mode (CPU-less)      |
-| picorv32 / ibex / veer_el2     |    | picosoc soc + Spike bus  |
+| CPU Cosim Targets              |    | SoC Mode                  |
+| picorv32 / ibex / veer_el2     |    | PicoSoC + Spike bus      |
 +---------+----------------------+    +------------+-------------+
           |                                        |
           v                                        v
 +---------+----------------------+    +------------+-------------+
-| src/top_cpu + src/cosim        |    | src/top_soc               |
-| retire events <-> CosimSession |    | HEX preload -> SoC RAM bus|
+| retire trace -> CosimSession   |    | HEX preload -> SoC RAM   |
+| CosimSession -> Spike backend  |    | Spike fetch/load/store   |
 +---------+----------------------+    +------------+-------------+
           |                                        |
           +-------------------+--------------------+
@@ -46,54 +55,35 @@ This repository builds firmware and runs RISC-V co-simulation flows for:
 
 ## Prerequisites
 
+The common development environment uses a RISC-V GCC toolchain, `elf2hex`, Icarus Verilog, Verilator, FuseSoC, and the external submodules.
+
 ```bash
 module load riscv-toolchain/master-v20251230 openEDA/verilator/v5.010
-```
-
-Initialize submodules on fresh checkout:
-
-```bash
 git submodule update --init --recursive
 ```
 
-## Quick Start
+## Usage
 
-Run full CPU-target regression:
-
-```bash
-./build.sh run cpu all all
-```
-
-Build slow dependencies once:
+`build.sh` is the command source of truth. Start with:
 
 ```bash
-./build.sh build spike
+./build.sh help
 ```
 
-Build firmware/top explicitly:
+Common smoke run:
 
 ```bash
-./build.sh build firmware all
-./build.sh build cpu all
-./build.sh build soc picorv32
+./build.sh all
 ```
 
-Run one target/case:
+Typical focused runs:
 
 ```bash
 ./build.sh run cpu picorv32 hello
-./build.sh run cpu ibex pico_test
-./build.sh run cpu veer_el2 mem
-```
-
-Run SoC bus-driven mode:
-
-```bash
-./build.sh run soc picorv32 hello
 ./build.sh run soc picorv32 all
 ```
 
-## Common Environment Overrides
+Common environment overrides are also listed by `./build.sh help`. Frequently used ones include:
 
 ```bash
 export BUILD_JOBS=8
@@ -101,28 +91,28 @@ export RESET_VECTOR=0x80000080
 export FIRMWARE_CASES="hello pico_test mem"
 ```
 
-## Output Locations
+## Outputs
 
-Main generated artifacts:
+Generated artifacts live under `build/`; logs live under `log/`.
+
+Important output areas:
 
 ```text
-build/firmware/<test>/obj/
-build/spike/
-build/pk/
-build/src/top_cpu/ibex/
-build/src/top_cpu/veer_el2/
-build/src/top_cpu/soc/
-log/
+build/firmware/<case>/obj/      Firmware ELF/HEX artifacts.
+build/spike/                    Local Spike install.
+build/pk/                       Local proxy kernel install.
+build/src/top_cpu/              CPU-mode simulator outputs.
+build/src/top_cpu/soc/          SoC-mode Verilator output.
+log/                            Run logs, compare logs, commit logs.
 ```
 
-`./build.sh clean` keeps spike/pk build caches.
-`./build.sh clean-all` removes the whole `build/` directory.
+Use `./build.sh clean` for normal generated-output cleanup while preserving slow dependency builds. Use `./build.sh clean-all` to remove the full `build/` tree and logs.
 
 ## More Details
 
-See `docs/arch.md` for architecture and layer-level design details.
+See [docs/arch.md](docs/arch.md) for architecture, CPU/SoC data flows, firmware HEX loading, and the firmware/TB protocol.
 
-## reference
+## References
 
-1. [Co-simulation System](https://ibex-core.readthedocs.io/en/latest/03_reference/cosim.html)
+1. [Ibex co-simulation documentation](https://ibex-core.readthedocs.io/en/latest/03_reference/cosim.html)
 1. [spike-cosim](https://github.com/farukyld/spike-cosim)
